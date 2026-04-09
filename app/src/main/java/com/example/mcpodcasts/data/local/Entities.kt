@@ -16,6 +16,7 @@ data class PodcastEntity(
     val subscribedAt: Long,
     val lastSyncedAt: Long,
     val notifyNewEpisodes: Boolean,
+    val includeInQueue: Boolean,
     val introSkipSeconds: Int,
     val outroSkipSeconds: Int,
 )
@@ -80,6 +81,7 @@ data class SubscriptionSummary(
     val episodeCount: Int,
     val lastSyncedAt: Long,
     val notifyNewEpisodes: Boolean,
+    val includeInQueue: Boolean,
     val introSkipSeconds: Int,
     val outroSkipSeconds: Int,
 )

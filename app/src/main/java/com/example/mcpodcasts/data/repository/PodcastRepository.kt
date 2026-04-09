@@ -109,12 +109,14 @@ class PodcastRepository(
     suspend fun updateSubscriptionSettings(
         feedUrl: String,
         notifyNewEpisodes: Boolean,
+        includeInQueue: Boolean,
         introSkipSeconds: Int,
         outroSkipSeconds: Int,
     ) = withContext(Dispatchers.IO) {
         podcastDao.updateSubscriptionSettings(
             feedUrl = feedUrl,
             notifyNewEpisodes = notifyNewEpisodes,
+            includeInQueue = includeInQueue,
             introSkipSeconds = introSkipSeconds.coerceAtLeast(0),
             outroSkipSeconds = outroSkipSeconds.coerceAtLeast(0),
         )
@@ -155,6 +157,7 @@ class PodcastRepository(
             subscribedAt = subscribedAt,
             lastSyncedAt = syncedAt,
             notifyNewEpisodes = existingPodcast?.notifyNewEpisodes ?: true,
+            includeInQueue = existingPodcast?.includeInQueue ?: true,
             introSkipSeconds = existingPodcast?.introSkipSeconds ?: 0,
             outroSkipSeconds = existingPodcast?.outroSkipSeconds ?: 0,
         )

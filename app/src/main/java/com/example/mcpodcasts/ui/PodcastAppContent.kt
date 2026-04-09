@@ -27,8 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Forward30
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Podcasts
@@ -39,12 +39,15 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -100,6 +103,8 @@ import com.example.mcpodcasts.data.settings.AppLanguage
 import com.example.mcpodcasts.data.settings.AppSettings
 import com.example.mcpodcasts.data.settings.ThemeMode
 import com.example.mcpodcasts.domain.buildMonthRangeForEpisodes
+import com.example.mcpodcasts.domain.formatDurationMsForLabel
+import com.example.mcpodcasts.domain.toDurationMs
 import com.example.mcpodcasts.playback.PlayerUiState
 import com.example.mcpodcasts.ui.viewmodel.PlayerViewModel
 import com.example.mcpodcasts.ui.viewmodel.PodcastsViewModel
@@ -121,6 +126,17 @@ private enum class MainTab(@param:StringRes val titleRes: Int) {
     Queue(R.string.tab_queue),
     Calendar(R.string.tab_calendar),
     Subscriptions(R.string.tab_subscriptions),
+}
+
+private enum class QueueSortOrder {
+    NewestFirst,
+    OldestFirst,
+}
+
+private enum class QueueReadFilter {
+    All,
+    Unread,
+    Read,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,9 +162,43 @@ internal fun PodcastAppContent(
     var showPlayerSheet by rememberSaveable { mutableStateOf(false) }
     var selectedSubscriptionFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSubscriptionSettingsFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var queueSortOrder by rememberSaveable { mutableStateOf(QueueSortOrder.NewestFirst) }
+    var queueReadFilter by rememberSaveable { mutableStateOf(QueueReadFilter.Unread) }
+    var queuePodcastFilterFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var showQueueSortMenu by remember { mutableStateOf(false) }
+    var showQueueReadMenu by remember { mutableStateOf(false) }
+    var showQueuePodcastMenu by remember { mutableStateOf(false) }
     val selectedSubscription = subscriptions.firstOrNull { it.feedUrl == selectedSubscriptionSettingsFeedUrl }
     val selectedSubscriptionEpisodes = calendarEpisodes.filter { episode ->
         episode.podcastId == selectedSubscriptionFeedUrl
+    }
+    val queuePodcastOptions = remember(subscriptions) {
+        subscriptions
+            .filter(SubscriptionSummary::includeInQueue)
+            .sortedBy { it.title.lowercase(Locale.getDefault()) }
+    }
+    val filteredQueue = remember(queue, queueSortOrder, queueReadFilter, queuePodcastFilterFeedUrl) {
+        queue
+            .asSequence()
+            .filter { episode ->
+                when (queueReadFilter) {
+                    QueueReadFilter.All -> true
+                    QueueReadFilter.Unread -> !episode.isRead
+                    QueueReadFilter.Read -> episode.isRead
+                }
+            }
+            .filter { episode ->
+                queuePodcastFilterFeedUrl == null || episode.podcastId == queuePodcastFilterFeedUrl
+            }
+            .sortedWith(
+                compareBy<QueueEpisode> { episode ->
+                    when (queueSortOrder) {
+                        QueueSortOrder.NewestFirst -> -episode.publishedAt
+                        QueueSortOrder.OldestFirst -> episode.publishedAt
+                    }
+                }.thenBy { episode -> episode.title.lowercase(Locale.getDefault()) }
+            )
+            .toList()
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val playerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -167,6 +217,14 @@ internal fun PodcastAppContent(
         }
     }
 
+    LaunchedEffect(queuePodcastOptions, queuePodcastFilterFeedUrl) {
+        if (queuePodcastFilterFeedUrl != null &&
+            queuePodcastOptions.none { it.feedUrl == queuePodcastFilterFeedUrl }
+        ) {
+            queuePodcastFilterFeedUrl = null
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -177,8 +235,8 @@ internal fun PodcastAppContent(
                             text = when (selectedTab) {
                                 MainTab.Queue -> pluralStringResource(
                                     R.plurals.topbar_queue_summary,
-                                    queue.size,
-                                    queue.size,
+                                    filteredQueue.size,
+                                    filteredQueue.size,
                                 )
                                 MainTab.Calendar -> stringResource(R.string.topbar_calendar_summary)
                                 MainTab.Subscriptions -> pluralStringResource(
@@ -196,6 +254,125 @@ internal fun PodcastAppContent(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
                 actions = {
+                    if (selectedTab == MainTab.Queue) {
+                        Box {
+                            IconButton(onClick = { showQueueSortMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.SwapVert,
+                                    contentDescription = stringResource(R.string.cd_queue_sort),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showQueueSortMenu,
+                                onDismissRequest = { showQueueSortMenu = false },
+                            ) {
+                                QueueSortOrder.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(
+                                                    when (option) {
+                                                        QueueSortOrder.NewestFirst -> R.string.sort_date_desc
+                                                        QueueSortOrder.OldestFirst -> R.string.sort_date_asc
+                                                    }
+                                                )
+                                            )
+                                        },
+                                        onClick = {
+                                            queueSortOrder = option
+                                            showQueueSortMenu = false
+                                        },
+                                        trailingIcon = {
+                                            if (queueSortOrder == option) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Done,
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showQueueReadMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.FilterList,
+                                    contentDescription = stringResource(R.string.cd_queue_read_filter),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showQueueReadMenu,
+                                onDismissRequest = { showQueueReadMenu = false },
+                            ) {
+                                QueueReadFilter.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(option.labelRes())) },
+                                        onClick = {
+                                            queueReadFilter = option
+                                            showQueueReadMenu = false
+                                        },
+                                        trailingIcon = {
+                                            if (queueReadFilter == option) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Done,
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showQueuePodcastMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Podcasts,
+                                    contentDescription = stringResource(R.string.cd_queue_podcast_filter),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showQueuePodcastMenu,
+                                onDismissRequest = { showQueuePodcastMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.filter_all_podcasts)) },
+                                    onClick = {
+                                        queuePodcastFilterFeedUrl = null
+                                        showQueuePodcastMenu = false
+                                    },
+                                    trailingIcon = {
+                                        if (queuePodcastFilterFeedUrl == null) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Done,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    },
+                                )
+                                queuePodcastOptions.forEach { subscription ->
+                                    DropdownMenuItem(
+                                        text = { Text(subscription.title) },
+                                        onClick = {
+                                            queuePodcastFilterFeedUrl = subscription.feedUrl
+                                            showQueuePodcastMenu = false
+                                        },
+                                        trailingIcon = {
+                                            if (queuePodcastFilterFeedUrl == subscription.feedUrl) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Done,
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (selectedTab == MainTab.Subscriptions) {
                         IconButton(
                             onClick = podcastsViewModel::refreshSubscriptions,
@@ -294,9 +471,10 @@ internal fun PodcastAppContent(
     ) { innerPadding ->
         when (selectedTab) {
             MainTab.Queue -> CompactQueueScreen(
-                queue = queue,
+                queue = filteredQueue,
+                hasEpisodes = queue.isNotEmpty(),
                 onPlayEpisode = { episodeId ->
-                    playerViewModel.playQueue(queue, episodeId)
+                    playerViewModel.playQueue(filteredQueue, episodeId)
                 },
                 onMarkEpisodeRead = podcastsViewModel::markEpisodeRead,
                 modifier = Modifier
@@ -397,10 +575,11 @@ internal fun PodcastAppContent(
         ) {
             SubscriptionPreferencesSheet(
                 subscription = selectedSubscription,
-                onSave = { notifyNewEpisodes, introSkipSeconds, outroSkipSeconds ->
+                onSave = { notifyNewEpisodes, includeInQueue, introSkipSeconds, outroSkipSeconds ->
                     podcastsViewModel.updateSubscriptionSettings(
                         feedUrl = selectedSubscription.feedUrl,
                         notifyNewEpisodes = notifyNewEpisodes,
+                        includeInQueue = includeInQueue,
                         introSkipSeconds = introSkipSeconds,
                         outroSkipSeconds = outroSkipSeconds,
                     )
@@ -431,14 +610,19 @@ internal fun PodcastAppContent(
 @Composable
 private fun CompactQueueScreen(
     queue: List<QueueEpisode>,
+    hasEpisodes: Boolean,
     onPlayEpisode: (String) -> Unit,
-    onMarkEpisodeRead: (String) -> Unit,
+    onMarkEpisodeRead: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (queue.isEmpty()) {
         AppEmptyState(
-            title = stringResource(R.string.queue_empty_title),
-            subtitle = stringResource(R.string.queue_empty_subtitle),
+            title = stringResource(
+                if (hasEpisodes) R.string.queue_filtered_empty_title else R.string.queue_empty_title,
+            ),
+            subtitle = stringResource(
+                if (hasEpisodes) R.string.queue_filtered_empty_subtitle else R.string.queue_empty_subtitle,
+            ),
             modifier = modifier,
         )
         return
@@ -455,7 +639,7 @@ private fun CompactQueueScreen(
             CompactQueueCard(
                 episode = episode,
                 onPlayEpisode = { onPlayEpisode(episode.episodeId) },
-                onMarkRead = { onMarkEpisodeRead(episode.episodeId) },
+                onToggleRead = { onMarkEpisodeRead(episode.episodeId, !episode.isRead) },
             )
         }
     }
@@ -465,7 +649,7 @@ private fun CompactQueueScreen(
 private fun CompactQueueCard(
     episode: QueueEpisode,
     onPlayEpisode: () -> Unit,
-    onMarkRead: () -> Unit,
+    onToggleRead: () -> Unit,
 ) {
     val progress = if (episode.durationMs > 0L) {
         (episode.playbackPositionMs.toFloat() / episode.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -541,8 +725,8 @@ private fun CompactQueueCard(
                 )
             }
             ReadStateIconButton(
-                isRead = false,
-                onClick = onMarkRead,
+                isRead = episode.isRead,
+                onClick = onToggleRead,
             )
         }
     }
@@ -908,15 +1092,6 @@ private fun SubscriptionCardExpanded(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (subscription.notifyNewEpisodes) {
-                Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = stringResource(R.string.cd_notifications_enabled),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp),
-                )
-                Spacer(modifier = Modifier.width(4.dp))
             }
             IconButton(onClick = onOpenSettings) {
                 Icon(
@@ -1376,10 +1551,13 @@ private fun ReadStateIconButton(
 @Composable
 private fun SubscriptionPreferencesSheet(
     subscription: SubscriptionSummary,
-    onSave: (Boolean, Int, Int) -> Unit,
+    onSave: (Boolean, Boolean, Int, Int) -> Unit,
 ) {
     var notifyNewEpisodes by rememberSaveable(subscription.feedUrl) {
         mutableStateOf(subscription.notifyNewEpisodes)
+    }
+    var includeInQueue by rememberSaveable(subscription.feedUrl) {
+        mutableStateOf(subscription.includeInQueue)
     }
     var introSkipSeconds by rememberSaveable(subscription.feedUrl) {
         mutableFloatStateOf(subscription.introSkipSeconds.toFloat())
@@ -1431,6 +1609,33 @@ private fun SubscriptionPreferencesSheet(
                 )
             }
         }
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.subscription_queue_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.subscription_queue_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = includeInQueue,
+                    onCheckedChange = { includeInQueue = it },
+                )
+            }
+        }
         Text(
             text = stringResource(R.string.subscription_skip_intro, introSkipSeconds.roundToInt()),
             style = MaterialTheme.typography.titleMedium,
@@ -1455,6 +1660,7 @@ private fun SubscriptionPreferencesSheet(
             onClick = {
                 onSave(
                     notifyNewEpisodes,
+                    includeInQueue,
                     introSkipSeconds.roundToInt(),
                     outroSkipSeconds.roundToInt(),
                 )
@@ -1522,6 +1728,13 @@ private fun ScrubbableNowPlayingSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            playerState.publishedAtMs?.takeIf { it > 0L }?.let { publishedAt ->
+                Text(
+                    text = publishedAt.asFriendlyDate(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Column(modifier = Modifier.fillMaxWidth()) {
             Slider(
@@ -1662,13 +1875,19 @@ private fun List<CalendarEpisode>.buildMonthRange(): List<YearMonth> {
 
 @Composable
 private fun episodeDurationForMetaLine(durationLabel: String?, durationMs: Long): String {
-    val trimmed = durationLabel?.trim().orEmpty()
     val none = stringResource(R.string.no_duration)
-    return when {
-        durationMs > 0L && (trimmed.isEmpty() || trimmed.all { it.isDigit() }) -> durationMs.asDurationLabel()
-        trimmed.isNotEmpty() -> trimmed
-        durationMs > 0L -> durationMs.asDurationLabel()
-        else -> none
+    if (durationMs > 0L) {
+        return formatDurationMsForLabel(durationMs).ifEmpty { none }
+    }
+    val trimmed = durationLabel?.trim().orEmpty()
+    if (trimmed.isEmpty()) {
+        return none
+    }
+    val parsedMs = trimmed.toDurationMs()
+    return if (parsedMs > 0L) {
+        formatDurationMsForLabel(parsedMs)
+    } else {
+        trimmed
     }
 }
 
@@ -1678,6 +1897,15 @@ private fun buildEpisodeMetaLine(
     durationLabel: String,
 ): String {
     return "${publishedAt.asFriendlyDate()} • $durationLabel"
+}
+
+@StringRes
+private fun QueueReadFilter.labelRes(): Int {
+    return when (this) {
+        QueueReadFilter.All -> R.string.filter_read_state_all
+        QueueReadFilter.Unread -> R.string.filter_unread_only
+        QueueReadFilter.Read -> R.string.filter_read_only
+    }
 }
 
 @StringRes
@@ -1699,7 +1927,7 @@ private fun Long.asFriendlyDate(): String {
         return stringResource(R.string.no_date)
     }
 
-    return DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
+    return DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
         .format(Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()))
 }
 
@@ -1709,23 +1937,10 @@ private fun Long.asFriendlyDateTime(): String {
         return stringResource(R.string.now)
     }
 
-    return DateTimeFormatter.ofPattern("d MMM • HH:mm", Locale.getDefault())
+    return DateTimeFormatter.ofPattern("d MMM yyyy • HH:mm", Locale.getDefault())
         .format(Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()))
 }
 
 private fun Long.asDurationLabel(): String {
-    if (this <= 0L) {
-        return "--:--"
-    }
-
-    val totalSeconds = this / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, seconds)
-    } else {
-        "%02d:%02d".format(minutes, seconds)
-    }
+    return formatDurationMsForLabel(this).ifEmpty { "--" }
 }

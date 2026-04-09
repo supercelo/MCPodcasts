@@ -26,6 +26,7 @@ interface PodcastDao {
         """
         UPDATE podcasts
         SET notifyNewEpisodes = :notifyNewEpisodes,
+            includeInQueue = :includeInQueue,
             introSkipSeconds = :introSkipSeconds,
             outroSkipSeconds = :outroSkipSeconds
         WHERE feedUrl = :feedUrl
@@ -34,6 +35,7 @@ interface PodcastDao {
     suspend fun updateSubscriptionSettings(
         feedUrl: String,
         notifyNewEpisodes: Boolean,
+        includeInQueue: Boolean,
         introSkipSeconds: Int,
         outroSkipSeconds: Int,
     )
@@ -49,6 +51,7 @@ interface PodcastDao {
             COUNT(episodes.episodeId) AS episodeCount,
             podcasts.lastSyncedAt AS lastSyncedAt,
             podcasts.notifyNewEpisodes AS notifyNewEpisodes,
+            podcasts.includeInQueue AS includeInQueue,
             podcasts.introSkipSeconds AS introSkipSeconds,
             podcasts.outroSkipSeconds AS outroSkipSeconds
         FROM podcasts
@@ -95,7 +98,7 @@ interface EpisodeDao {
             episodes.isCompleted AS isCompleted
         FROM episodes
         INNER JOIN podcasts ON podcasts.feedUrl = episodes.podcastId
-        WHERE episodes.isRead = 0
+        WHERE podcasts.includeInQueue = 1
         ORDER BY episodes.publishedAt DESC, episodes.title COLLATE NOCASE ASC
         """
     )
@@ -122,7 +125,7 @@ interface EpisodeDao {
             episodes.isCompleted AS isCompleted
         FROM episodes
         INNER JOIN podcasts ON podcasts.feedUrl = episodes.podcastId
-        WHERE episodes.isRead = 0
+        WHERE podcasts.includeInQueue = 1
         ORDER BY episodes.publishedAt DESC, episodes.title COLLATE NOCASE ASC
         """
     )

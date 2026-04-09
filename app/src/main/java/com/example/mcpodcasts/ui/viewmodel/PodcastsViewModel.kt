@@ -119,6 +119,7 @@ class PodcastsViewModel(
     fun updateSubscriptionSettings(
         feedUrl: String,
         notifyNewEpisodes: Boolean,
+        includeInQueue: Boolean,
         introSkipSeconds: Int,
         outroSkipSeconds: Int,
     ) {
@@ -126,6 +127,7 @@ class PodcastsViewModel(
             repository.updateSubscriptionSettings(
                 feedUrl = feedUrl,
                 notifyNewEpisodes = notifyNewEpisodes,
+                includeInQueue = includeInQueue,
                 introSkipSeconds = introSkipSeconds,
                 outroSkipSeconds = outroSkipSeconds,
             )

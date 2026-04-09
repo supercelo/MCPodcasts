@@ -3,6 +3,7 @@ package com.example.mcpodcasts
 import com.example.mcpodcasts.data.local.EpisodeEntity
 import com.example.mcpodcasts.data.rss.ParsedEpisode
 import com.example.mcpodcasts.domain.buildMonthRangeForEpisodes
+import com.example.mcpodcasts.domain.formatDurationMsForLabel
 import com.example.mcpodcasts.domain.mergeWithExistingEpisode
 import com.example.mcpodcasts.domain.normalizeRefreshIntervalHours
 import java.time.LocalDate
@@ -104,6 +105,14 @@ class PodcastFeatureRulesTest {
         )
 
         assertEquals(4_978_000L, merged.durationMs)
-        assertEquals("1:22:58", merged.durationLabel)
+        assertEquals("01:22:58", merged.durationLabel)
+    }
+
+    @Test
+    fun formatDurationMsForLabel_alwaysUsesHhMmSsWithColons() {
+        assertEquals("00:01:30", formatDurationMsForLabel(90_000L))
+        assertEquals("00:00:05", formatDurationMsForLabel(5_000L))
+        assertEquals("01:00:00", formatDurationMsForLabel(3_600_000L))
+        assertEquals("02:03:04", formatDurationMsForLabel(7_384_000L))
     }
 }

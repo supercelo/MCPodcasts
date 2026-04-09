@@ -82,8 +82,7 @@ internal fun String?.toDurationMs(): Long {
 }
 
 /**
- * RSS often sends `<itunes:duration>` as total seconds only (e.g. "4978"). Store a clock label for UI;
- * keep feed strings that already look like H:MM:SS or MM:SS.
+ * Human-readable duration as `H:MM:SS` (always three colon-separated parts; minutes and seconds zero-padded).
  */
 internal fun formatDurationMsForLabel(durationMs: Long): String {
     if (durationMs <= 0L) {
@@ -95,10 +94,10 @@ internal fun formatDurationMsForLabel(durationMs: Long): String {
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
 
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, seconds)
+    return if (hours < 100) {
+        "%02d:%02d:%02d".format(hours, minutes, seconds)
     } else {
-        "%02d:%02d".format(minutes, seconds)
+        "%d:%02d:%02d".format(hours, minutes, seconds)
     }
 }
 
@@ -111,19 +110,11 @@ private fun resolveDurationLabelForStorage(
     val rawTrimmed = rawFromFeed?.trim().orEmpty()
 
     if (parsedDurationMs > 0L) {
-        return when {
-            rawTrimmed.isEmpty() -> formatDurationMsForLabel(parsedDurationMs)
-            rawTrimmed.all { it.isDigit() } -> formatDurationMsForLabel(parsedDurationMs)
-            else -> rawTrimmed
-        }
+        return formatDurationMsForLabel(parsedDurationMs)
     }
 
     if (mergedDurationMs > 0L) {
-        val existingTrimmed = existingLabel?.trim().orEmpty()
-        return when {
-            existingTrimmed.isNotEmpty() && !existingTrimmed.all { it.isDigit() } -> existingTrimmed
-            else -> formatDurationMsForLabel(mergedDurationMs)
-        }
+        return formatDurationMsForLabel(mergedDurationMs)
     }
 
     return rawTrimmed.takeIf { it.isNotEmpty() }

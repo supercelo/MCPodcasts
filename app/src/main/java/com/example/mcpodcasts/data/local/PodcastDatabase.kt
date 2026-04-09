@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PodcastEntity::class,
         EpisodeEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class PodcastDatabase : RoomDatabase() {
@@ -29,7 +29,7 @@ abstract class PodcastDatabase : RoomDatabase() {
                     context,
                     PodcastDatabase::class.java,
                     "mcpodcasts.db",
-                ).addMigrations(MIGRATION_1_2).build().also { database ->
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { database ->
                     INSTANCE = database
                 }
             }
@@ -59,6 +59,17 @@ abstract class PodcastDatabase : RoomDatabase() {
                     """
                     ALTER TABLE episodes
                     ADD COLUMN isRead INTEGER NOT NULL DEFAULT 0
+                    """
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    ALTER TABLE podcasts
+                    ADD COLUMN includeInQueue INTEGER NOT NULL DEFAULT 1
                     """
                 )
             }

@@ -6,9 +6,14 @@
     <string name="topbar_calendar_summary">Episodes by publish date</string>
     <string name="cd_refresh_feeds">Refresh feeds</string>
     <string name="cd_settings">Settings</string>
+    <string name="cd_queue_sort">Sort queue</string>
+    <string name="cd_queue_read_filter">Filter queue by read state</string>
+    <string name="cd_queue_podcast_filter">Filter queue by podcast</string>
     <string name="action_search_or_add">Search or add</string>
     <string name="queue_empty_title">Your queue is empty</string>
     <string name="queue_empty_subtitle">Episodes leave the queue after they finish playing or when you mark them as read.</string>
+    <string name="queue_filtered_empty_title">No queue episodes match these filters</string>
+    <string name="queue_filtered_empty_subtitle">Try changing the sort or filters to show more episodes.</string>
     <string name="cd_play_episode">Play episode</string>
     <string name="calendar_empty_title">No calendar episodes yet</string>
     <string name="calendar_empty_subtitle">Once you add podcasts, episodes will appear on the day they were published.</string>
@@ -48,6 +53,9 @@
     <string name="language_italian">Italian</string>
     <string name="language_german">German</string>
     <string name="filter_unread_only">Unread only</string>
+    <string name="filter_read_only">Read only</string>
+    <string name="filter_read_state_all">All episodes</string>
+    <string name="filter_all_podcasts">All podcasts</string>
     <string name="sort_date_asc">Date ASC</string>
     <string name="sort_date_desc">Date DESC</string>
     <string name="no_filtered_episodes">No episodes match this filter.</string>
@@ -56,6 +64,8 @@
     <string name="subscription_preferences_subtitle">Customize notifications and the seconds skipped at the start and end of each episode for this subscription.</string>
     <string name="subscription_notify_title">Notify about new episodes</string>
     <string name="subscription_notify_subtitle">Receive local notifications when new episodes arrive for this podcast.</string>
+    <string name="subscription_queue_title">Include in queue</string>
+    <string name="subscription_queue_subtitle">When enabled, unread episodes from this podcast appear in the queue. Turning it off removes them from the queue until they are enabled again.</string>
     <string name="subscription_skip_intro">Skip intro: %1$ds</string>
     <string name="subscription_skip_outro">Skip outro: %1$ds</string>
     <string name="action_save">Save</string>

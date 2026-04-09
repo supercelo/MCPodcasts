@@ -29,6 +29,8 @@ data class PlayerUiState(
     val title: String = "",
     val podcastTitle: String = "",
     val artworkUrl: String? = null,
+    /** Episode publication time in epoch millis; null if unknown. */
+    val publishedAtMs: Long? = null,
     val durationMs: Long = 0L,
     val positionMs: Long = 0L,
     val isPlaying: Boolean = false,
@@ -156,6 +158,11 @@ class PlayerConnection(
         val mediaMetadata = player.mediaMetadata
         val duration = player.duration.takeIf { it > 0 } ?: 0L
         val hasKnownMedia = player.currentMediaItem != null || player.mediaItemCount > 0
+        val publishedAtMs = when {
+            player.currentMediaItem != null -> resolvePublishedAtMs(player)
+            hasKnownMedia -> previousState.publishedAtMs
+            else -> null
+        }
         _uiState.value = PlayerUiState(
             connected = true,
             currentEpisodeId = player.currentMediaItem?.mediaId ?: previousState.currentEpisodeId.takeIf { hasKnownMedia },
@@ -167,12 +174,22 @@ class PlayerConnection(
                 .orEmpty(),
             artworkUrl = mediaMetadata.artworkUri?.toString()
                 ?: previousState.artworkUrl.takeIf { hasKnownMedia },
+            publishedAtMs = publishedAtMs,
             durationMs = duration,
             positionMs = player.currentPosition.coerceAtLeast(0L),
             isPlaying = player.isPlaying,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
             hasMedia = hasKnownMedia,
         )
+    }
+
+    private fun resolvePublishedAtMs(player: Player): Long? {
+        val item = player.currentMediaItem ?: return null
+        val fromTag = item.localConfiguration?.tag
+        if (fromTag is Long && fromTag > 0L) {
+            return fromTag
+        }
+        return queuePlaybackEpisodes[item.mediaId]?.publishedAt?.takeIf { it > 0L }
     }
 
     private fun persistPlayback(player: Player) {
@@ -203,6 +220,7 @@ private fun QueueEpisode.toMediaItem(): MediaItem {
     return MediaItem.Builder()
         .setMediaId(episodeId)
         .setUri(audioUrl)
+        .setTag(publishedAt)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
@@ -217,6 +235,7 @@ private fun CalendarEpisode.toMediaItem(): MediaItem {
     return MediaItem.Builder()
         .setMediaId(episodeId)
         .setUri(audioUrl)
+        .setTag(publishedAt)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
