@@ -60,9 +60,13 @@ class PlayerConnection(
     init {
         controllerFuture.addListener(
             {
-                controller = controllerFuture.get().also { mediaController ->
-                    mediaController.addListener(playerListener)
-                    publishState(mediaController)
+                runCatching {
+                    controllerFuture.get()
+                }.onSuccess { mediaController ->
+                    controller = mediaController.also {
+                        it.addListener(playerListener)
+                        publishState(it)
+                    }
                 }
             },
             ContextCompat.getMainExecutor(appContext),

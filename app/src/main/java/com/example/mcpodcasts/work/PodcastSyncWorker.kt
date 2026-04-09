@@ -24,7 +24,13 @@ class PodcastSyncWorker(
         val notificationManager = application.container.episodeNotificationManager
 
         notificationManager.ensureChannels()
-        setForeground(notificationManager.createSyncForegroundInfo())
+        runCatching {
+            setForeground(notificationManager.createSyncForegroundInfo())
+        }.onFailure { error ->
+            if (!isForegroundPromotionBlocked(error)) {
+                throw error
+            }
+        }
 
         return runCatching {
             val newEpisodes = application.container.podcastRepository.refreshAllFeeds()
@@ -36,6 +42,18 @@ class PodcastSyncWorker(
             onSuccess = { Result.success() },
             onFailure = { Result.retry() },
         )
+    }
+
+    private companion object {
+        private const val FOREGROUND_START_NOT_ALLOWED =
+            "android.app.ForegroundServiceStartNotAllowedException"
+
+        private fun isForegroundPromotionBlocked(error: Throwable): Boolean {
+            if (error is SecurityException) {
+                return true
+            }
+            return error.javaClass.name == FOREGROUND_START_NOT_ALLOWED
+        }
     }
 }
 

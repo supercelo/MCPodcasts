@@ -518,7 +518,10 @@ private fun CompactQueueCard(
                 Text(
                     text = buildEpisodeMetaLine(
                         publishedAt = episode.publishedAt,
-                        durationLabel = episode.durationLabel.orEmpty().ifBlank { episode.durationMs.asDurationLabel() },
+                        durationLabel = episodeDurationForMetaLine(
+                            durationLabel = episode.durationLabel,
+                            durationMs = episode.durationMs,
+                        ),
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -794,7 +797,10 @@ private fun CalendarEpisodeCard(
                 Text(
                     text = buildEpisodeMetaLine(
                         publishedAt = episode.publishedAt,
-                        durationLabel = episode.durationLabel.orEmpty().ifBlank { stringResource(R.string.no_duration) },
+                        durationLabel = episodeDurationForMetaLine(
+                            durationLabel = episode.durationLabel,
+                            durationMs = episode.durationMs,
+                        ),
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1652,6 +1658,18 @@ private fun List<CalendarEpisode>.buildMonthRange(): List<YearMonth> {
         Instant.ofEpochMilli(episode.publishedAt).atZone(ZoneId.systemDefault()).toLocalDate()
     }
     return buildMonthRangeForEpisodes(publishedDates)
+}
+
+@Composable
+private fun episodeDurationForMetaLine(durationLabel: String?, durationMs: Long): String {
+    val trimmed = durationLabel?.trim().orEmpty()
+    val none = stringResource(R.string.no_duration)
+    return when {
+        durationMs > 0L && (trimmed.isEmpty() || trimmed.all { it.isDigit() }) -> durationMs.asDurationLabel()
+        trimmed.isNotEmpty() -> trimmed
+        durationMs > 0L -> durationMs.asDurationLabel()
+        else -> none
+    }
 }
 
 @Composable

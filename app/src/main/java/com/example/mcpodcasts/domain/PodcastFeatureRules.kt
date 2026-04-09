@@ -32,6 +32,13 @@ internal fun ParsedEpisode.mergeWithExistingEpisode(
     existingEpisode: EpisodeEntity?,
 ): EpisodeEntity {
     val parsedDurationMs = durationLabel.toDurationMs()
+    val mergedDurationMs = parsedDurationMs.takeIf { it > 0L } ?: existingEpisode?.durationMs ?: 0L
+    val mergedDurationLabel = resolveDurationLabelForStorage(
+        rawFromFeed = durationLabel,
+        parsedDurationMs = parsedDurationMs,
+        mergedDurationMs = mergedDurationMs,
+        existingLabel = existingEpisode?.durationLabel,
+    )
 
     return EpisodeEntity(
         episodeId = stableId(),
@@ -43,8 +50,8 @@ internal fun ParsedEpisode.mergeWithExistingEpisode(
         artworkUrl = artworkUrl ?: fallbackArtworkUrl,
         episodeUrl = episodeUrl,
         publishedAt = publishedAt,
-        durationLabel = durationLabel,
-        durationMs = parsedDurationMs.takeIf { it > 0L } ?: existingEpisode?.durationMs ?: 0L,
+        durationLabel = mergedDurationLabel,
+        durationMs = mergedDurationMs,
         playbackPositionMs = existingEpisode?.playbackPositionMs ?: 0L,
         isRead = existingEpisode?.isRead ?: false,
         isCompleted = existingEpisode?.isCompleted ?: false,
@@ -72,6 +79,54 @@ internal fun String?.toDurationMs(): Long {
         else -> (parts[0] * 3600) + (parts[1] * 60) + parts[2]
     }
     return seconds * 1000
+}
+
+/**
+ * RSS often sends `<itunes:duration>` as total seconds only (e.g. "4978"). Store a clock label for UI;
+ * keep feed strings that already look like H:MM:SS or MM:SS.
+ */
+internal fun formatDurationMsForLabel(durationMs: Long): String {
+    if (durationMs <= 0L) {
+        return ""
+    }
+
+    val totalSeconds = durationMs / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
+    }
+}
+
+private fun resolveDurationLabelForStorage(
+    rawFromFeed: String?,
+    parsedDurationMs: Long,
+    mergedDurationMs: Long,
+    existingLabel: String?,
+): String? {
+    val rawTrimmed = rawFromFeed?.trim().orEmpty()
+
+    if (parsedDurationMs > 0L) {
+        return when {
+            rawTrimmed.isEmpty() -> formatDurationMsForLabel(parsedDurationMs)
+            rawTrimmed.all { it.isDigit() } -> formatDurationMsForLabel(parsedDurationMs)
+            else -> rawTrimmed
+        }
+    }
+
+    if (mergedDurationMs > 0L) {
+        val existingTrimmed = existingLabel?.trim().orEmpty()
+        return when {
+            existingTrimmed.isNotEmpty() && !existingTrimmed.all { it.isDigit() } -> existingTrimmed
+            else -> formatDurationMsForLabel(mergedDurationMs)
+        }
+    }
+
+    return rawTrimmed.takeIf { it.isNotEmpty() }
 }
 
 private fun String.sha256(): String {

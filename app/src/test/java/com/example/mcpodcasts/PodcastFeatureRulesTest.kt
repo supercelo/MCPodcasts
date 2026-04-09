@@ -83,4 +83,27 @@ class PodcastFeatureRulesTest {
         assertEquals("Updated title", merged.title)
         assertEquals("https://example.com/fallback.jpg", merged.artworkUrl)
     }
+
+    @Test
+    fun mergeWithExistingEpisode_formatsItunesDurationAsTotalSeconds() {
+        val parsedEpisode = ParsedEpisode(
+            guid = "g",
+            title = "Episode",
+            summary = null,
+            audioUrl = "https://example.com/a.mp3",
+            artworkUrl = null,
+            episodeUrl = null,
+            publishedAt = 1L,
+            durationLabel = "4978",
+        )
+
+        val merged = parsedEpisode.mergeWithExistingEpisode(
+            podcastId = "feed",
+            fallbackArtworkUrl = null,
+            existingEpisode = null,
+        )
+
+        assertEquals(4_978_000L, merged.durationMs)
+        assertEquals("1:22:58", merged.durationLabel)
+    }
 }
