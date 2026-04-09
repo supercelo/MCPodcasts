@@ -148,19 +148,26 @@ class PlayerConnection(
     }
 
     private fun publishState(player: Player) {
+        val previousState = _uiState.value
         val mediaMetadata = player.mediaMetadata
         val duration = player.duration.takeIf { it > 0 } ?: 0L
+        val hasKnownMedia = player.currentMediaItem != null || player.mediaItemCount > 0
         _uiState.value = PlayerUiState(
             connected = true,
-            currentEpisodeId = player.currentMediaItem?.mediaId,
-            title = mediaMetadata.title?.toString().orEmpty(),
-            podcastTitle = mediaMetadata.artist?.toString().orEmpty(),
-            artworkUrl = mediaMetadata.artworkUri?.toString(),
+            currentEpisodeId = player.currentMediaItem?.mediaId ?: previousState.currentEpisodeId.takeIf { hasKnownMedia },
+            title = mediaMetadata.title?.toString()?.takeUnless { it.isBlank() }
+                ?: previousState.title.takeIf { hasKnownMedia }
+                .orEmpty(),
+            podcastTitle = mediaMetadata.artist?.toString()?.takeUnless { it.isBlank() }
+                ?: previousState.podcastTitle.takeIf { hasKnownMedia }
+                .orEmpty(),
+            artworkUrl = mediaMetadata.artworkUri?.toString()
+                ?: previousState.artworkUrl.takeIf { hasKnownMedia },
             durationMs = duration,
             positionMs = player.currentPosition.coerceAtLeast(0L),
             isPlaying = player.isPlaying,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
-            hasMedia = player.currentMediaItem != null,
+            hasMedia = hasKnownMedia,
         )
     }
 

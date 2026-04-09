@@ -1,6 +1,7 @@
 package com.example.mcpodcasts.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,7 +117,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import androidx.annotation.StringRes
 
-private enum class MainTab(@StringRes val titleRes: Int) {
+private enum class MainTab(@param:StringRes val titleRes: Int) {
     Queue(R.string.tab_queue),
     Calendar(R.string.tab_calendar),
     Subscriptions(R.string.tab_subscriptions),
@@ -155,6 +156,9 @@ internal fun PodcastAppContent(
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val subscriptionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val shouldShowMiniPlayer = playerState.hasMedia ||
+        playerState.currentEpisodeId != null ||
+        playerState.title.isNotBlank()
 
     LaunchedEffect(message) {
         message?.let { text ->
@@ -206,6 +210,7 @@ internal fun PodcastAppContent(
                                 Icon(
                                     imageVector = Icons.Outlined.Refresh,
                                     contentDescription = stringResource(R.string.cd_refresh_feeds),
+                                    modifier = Modifier.size(26.dp),
                                 )
                             }
                         }
@@ -214,6 +219,7 @@ internal fun PodcastAppContent(
                         Icon(
                             imageVector = Icons.Outlined.Settings,
                             contentDescription = stringResource(R.string.cd_settings),
+                            modifier = Modifier.size(26.dp),
                         )
                     }
                 },
@@ -227,6 +233,7 @@ internal fun PodcastAppContent(
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = null,
+                            modifier = Modifier.size(24.dp),
                         )
                     },
                     text = { Text(stringResource(R.string.action_search_or_add)) },
@@ -236,7 +243,7 @@ internal fun PodcastAppContent(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             Column {
-                if (playerState.hasMedia) {
+                if (shouldShowMiniPlayer) {
                     CompactMiniPlayer(
                         playerState = playerState,
                         onTogglePlayback = playerViewModel::togglePlayback,
@@ -252,6 +259,7 @@ internal fun PodcastAppContent(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
                                 contentDescription = null,
+                                modifier = Modifier.size(26.dp),
                             )
                         },
                         label = { Text(stringResource(R.string.tab_queue)) },
@@ -263,6 +271,7 @@ internal fun PodcastAppContent(
                             Icon(
                                 imageVector = Icons.Outlined.CalendarMonth,
                                 contentDescription = null,
+                                modifier = Modifier.size(26.dp),
                             )
                         },
                         label = { Text(stringResource(R.string.tab_calendar)) },
@@ -274,6 +283,7 @@ internal fun PodcastAppContent(
                             Icon(
                                 imageVector = Icons.Outlined.Podcasts,
                                 contentDescription = null,
+                                modifier = Modifier.size(26.dp),
                             )
                         },
                         label = { Text(stringResource(R.string.tab_subscriptions)) },
@@ -401,7 +411,7 @@ internal fun PodcastAppContent(
         }
     }
 
-    if (showPlayerSheet && playerState.hasMedia) {
+    if (showPlayerSheet && shouldShowMiniPlayer) {
         ModalBottomSheet(
             onDismissRequest = { showPlayerSheet = false },
             sheetState = playerSheetState,
@@ -507,7 +517,10 @@ private fun CompactQueueCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${episode.publishedAt.asFriendlyDate()} • ${episode.durationLabel.orEmpty().ifBlank { episode.durationMs.asDurationLabel() }}",
+                    text = buildEpisodeMetaLine(
+                        publishedAt = episode.publishedAt,
+                        durationLabel = episode.durationLabel.orEmpty().ifBlank { episode.durationMs.asDurationLabel() },
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -522,6 +535,7 @@ private fun CompactQueueCard(
                 Icon(
                     imageVector = Icons.Outlined.PlayCircle,
                     contentDescription = stringResource(R.string.cd_play_episode),
+                    modifier = Modifier.size(30.dp),
                 )
             }
             ReadStateIconButton(
@@ -775,9 +789,14 @@ private fun CalendarEpisodeCard(
                     text = episode.podcastTitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = episode.durationLabel.orEmpty().ifBlank { stringResource(R.string.no_duration) },
+                    text = buildEpisodeMetaLine(
+                        publishedAt = episode.publishedAt,
+                        durationLabel = episode.durationLabel.orEmpty().ifBlank { stringResource(R.string.no_duration) },
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -786,6 +805,7 @@ private fun CalendarEpisodeCard(
                 Icon(
                     imageVector = Icons.Outlined.PlayCircle,
                     contentDescription = stringResource(R.string.cd_play_episode),
+                    modifier = Modifier.size(28.dp),
                 )
             }
             ReadStateIconButton(
@@ -889,6 +909,7 @@ private fun SubscriptionCardExpanded(
                     imageVector = Icons.Outlined.Notifications,
                     contentDescription = stringResource(R.string.cd_notifications_enabled),
                     tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp),
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -896,6 +917,7 @@ private fun SubscriptionCardExpanded(
                 Icon(
                     imageVector = Icons.Outlined.Tune,
                     contentDescription = stringResource(R.string.cd_subscription_preferences),
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }
@@ -953,8 +975,8 @@ private fun CompactMiniPlayer(
                         } else {
                             Icons.Outlined.PlayCircle
                         },
-                    contentDescription = stringResource(R.string.cd_play_pause),
-                        modifier = Modifier.size(30.dp),
+                        contentDescription = stringResource(R.string.cd_play_pause),
+                        modifier = Modifier.size(34.dp),
                     )
                 }
             }
@@ -1348,24 +1370,27 @@ private fun ReadStateIconButton(
     val readStateDescription = stringResource(
         if (isRead) R.string.cd_mark_as_unread else R.string.cd_mark_as_read,
     )
+    val strokeColor = if (isRead) Color(0xFF87F35C) else Color(0xFFFF5B5B)
     IconButton(onClick = onClick) {
-        Box(
+        Surface(
             modifier = Modifier
-                .size(18.dp)
-                .clip(CircleShape)
-                .background(if (isRead) Color(0xFF2E7D32) else Color(0xFFD32F2F))
+                .size(24.dp)
                 .semantics {
                     contentDescription = readStateDescription
                 },
-            contentAlignment = Alignment.Center,
+            shape = CircleShape,
+            color = Color.Transparent,
+            border = BorderStroke(2.5.dp, strokeColor),
         ) {
-            if (isRead) {
-                Icon(
-                    imageVector = Icons.Outlined.Done,
-                    contentDescription = readStateDescription,
-                    tint = Color.White,
-                    modifier = Modifier.size(12.dp),
-                )
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (isRead) {
+                    Icon(
+                        imageVector = Icons.Outlined.Done,
+                        contentDescription = readStateDescription,
+                        tint = strokeColor,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
         }
     }
@@ -1559,7 +1584,7 @@ private fun ScrubbableNowPlayingSheet(
                 Icon(
                     imageVector = Icons.Outlined.SkipPrevious,
                     contentDescription = stringResource(R.string.cd_previous),
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
             PlayerTransportButton(
@@ -1587,7 +1612,7 @@ private fun ScrubbableNowPlayingSheet(
                 Icon(
                     imageVector = Icons.Outlined.SkipNext,
                     contentDescription = stringResource(R.string.cd_next),
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
         }
@@ -1602,7 +1627,7 @@ private fun PlayerTransportButton(
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.size(56.dp),
+        modifier = Modifier.size(60.dp),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         onClick = onClick,
@@ -1611,7 +1636,7 @@ private fun PlayerTransportButton(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
     }
@@ -1656,6 +1681,14 @@ private fun List<CalendarEpisode>.buildMonthRange(): List<YearMonth> {
         Instant.ofEpochMilli(episode.publishedAt).atZone(ZoneId.systemDefault()).toLocalDate()
     }
     return buildMonthRangeForEpisodes(publishedDates)
+}
+
+@Composable
+private fun buildEpisodeMetaLine(
+    publishedAt: Long,
+    durationLabel: String,
+): String {
+    return "${publishedAt.asFriendlyDate()} • $durationLabel"
 }
 
 @StringRes
