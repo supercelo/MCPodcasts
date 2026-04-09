@@ -365,7 +365,6 @@ internal fun PodcastAppContent(
                 settings = settings,
                 onAppLanguageSelected = settingsViewModel::setAppLanguage,
                 onThemeSelected = settingsViewModel::setThemeMode,
-                onDynamicColorChanged = settingsViewModel::setDynamicColor,
                 onRefreshIntervalSelected = settingsViewModel::setRefreshIntervalHours,
                 onSyncSummaryNotificationsChanged = settingsViewModel::setSyncSummaryNotificationsEnabled,
             )
@@ -1129,7 +1128,6 @@ private fun AppSettingsSheet(
     settings: AppSettings,
     onAppLanguageSelected: (AppLanguage) -> Unit,
     onThemeSelected: (ThemeMode) -> Unit,
-    onDynamicColorChanged: (Boolean) -> Unit,
     onRefreshIntervalSelected: (Int) -> Unit,
     onSyncSummaryNotificationsChanged: (Boolean) -> Unit,
 ) {
@@ -1186,33 +1184,6 @@ private fun AppSettingsSheet(
                             }
                         )
                     },
-                )
-            }
-        }
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_dynamic_color_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_dynamic_color_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = settings.dynamicColor,
-                    onCheckedChange = onDynamicColorChanged,
                 )
             }
         }

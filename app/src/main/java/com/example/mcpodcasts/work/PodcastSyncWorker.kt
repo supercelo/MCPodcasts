@@ -21,6 +21,10 @@ class PodcastSyncWorker(
     override suspend fun doWork(): Result {
         val application = applicationContext as? MCPodcastsApplication
             ?: return Result.failure()
+        val notificationManager = application.container.episodeNotificationManager
+
+        notificationManager.ensureChannels()
+        setForeground(notificationManager.createSyncForegroundInfo())
 
         return runCatching {
             val newEpisodes = application.container.podcastRepository.refreshAllFeeds()
@@ -50,7 +54,6 @@ object PodcastSyncScheduler {
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .setRequiresBatteryNotLow(true)
                     .build()
             )
             .build()

@@ -1,6 +1,9 @@
 package com.example.mcpodcasts
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +25,7 @@ class MainActivity : AppCompatActivity() {
         }
         AppCompatDelegate.setApplicationLocales(settings.appLanguage.toLocaleListCompat())
         super.onCreate(savedInstanceState)
+        requestNotificationPermissionIfNeeded(settings.syncSummaryNotificationsEnabled)
         enableEdgeToEdge()
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory())
@@ -31,7 +35,6 @@ class MainActivity : AppCompatActivity() {
 
             MCPodcastsTheme(
                 themeMode = settings.themeMode,
-                dynamicColor = settings.dynamicColor,
             ) {
                 PodcastApp(
                     podcastsViewModel = podcastsViewModel,
@@ -40,5 +43,26 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun requestNotificationPermissionIfNeeded(syncNotificationsEnabled: Boolean) {
+        if (!syncNotificationsEnabled) {
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS_CODE)
+    }
+
+    private companion object {
+        const val REQUEST_NOTIFICATIONS_CODE = 100
     }
 }

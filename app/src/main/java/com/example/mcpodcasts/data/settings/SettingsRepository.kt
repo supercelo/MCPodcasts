@@ -40,7 +40,6 @@ enum class AppLanguage(val languageTag: String) {
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
     val appLanguage: AppLanguage = AppLanguage.System,
-    val dynamicColor: Boolean = true,
     val refreshIntervalHours: Int = 1,
     val syncSummaryNotificationsEnabled: Boolean = true,
 )
@@ -59,7 +58,6 @@ class SettingsRepository(private val context: Context) {
         AppSettings(
             themeMode = themeMode,
             appLanguage = appLanguage,
-            dynamicColor = preferences[DYNAMIC_COLOR_KEY] ?: true,
             refreshIntervalHours = preferences[REFRESH_INTERVAL_HOURS_KEY] ?: 1,
             syncSummaryNotificationsEnabled = preferences[SYNC_SUMMARY_NOTIFICATIONS_KEY] ?: true,
         )
@@ -81,12 +79,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setDynamicColor(enabled: Boolean) {
-        context.settingsDataStore.edit { preferences ->
-            preferences[DYNAMIC_COLOR_KEY] = enabled
-        }
-    }
-
     suspend fun setRefreshIntervalHours(hours: Int) {
         context.settingsDataStore.edit { preferences ->
             preferences[REFRESH_INTERVAL_HOURS_KEY] = hours.coerceAtLeast(1)
@@ -102,7 +94,6 @@ class SettingsRepository(private val context: Context) {
     private companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val APP_LANGUAGE_KEY = stringPreferencesKey("app_language")
-        val DYNAMIC_COLOR_KEY = booleanPreferencesKey("dynamic_color")
         val REFRESH_INTERVAL_HOURS_KEY = intPreferencesKey("refresh_interval_hours")
         val SYNC_SUMMARY_NOTIFICATIONS_KEY = booleanPreferencesKey("sync_summary_notifications")
     }

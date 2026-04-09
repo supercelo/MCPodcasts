@@ -62,7 +62,7 @@
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
     <string name="label_rewind_10">Rewind 10 seconds</string>
-    <string name="label_forward_30">Forward 30 seconds</string>
+    <string name="label_forward_30">Forward 15 seconds</string>
     <string name="label_brand">Podcast MC</string>
     <string name="no_date">No date</string>
     <string name="now">now</string>
@@ -78,6 +78,10 @@
     <string name="error_search_podcasts">Couldn\'t search podcasts (%1$d).</string>
     <string name="notification_channel_name">New episodes</string>
     <string name="notification_channel_description">Notifications when new episodes arrive for subscribed podcasts.</string>
+    <string name="sync_notification_channel_name">Background sync</string>
+    <string name="sync_notification_channel_description">Ongoing notification while podcasts are syncing in the background.</string>
+    <string name="sync_in_progress_title">Syncing podcasts</string>
+    <string name="sync_in_progress_message">Checking for new episodes in the background.</string>
     <string name="notification_message_single_podcast">%1$s</string>
     <string name="notification_message_multiple_podcasts">%1$d podcasts with updates</string>
 

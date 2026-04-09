@@ -41,12 +41,6 @@ class SettingsViewModel(
         }
     }
 
-    fun setDynamicColor(enabled: Boolean) {
-        viewModelScope.launch {
-            repository.setDynamicColor(enabled)
-        }
-    }
-
     fun setRefreshIntervalHours(hours: Int) {
         viewModelScope.launch {
             repository.setRefreshIntervalHours(hours)

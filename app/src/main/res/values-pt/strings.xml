@@ -62,7 +62,7 @@
     <string name="cd_previous">Anterior</string>
     <string name="cd_next">Seguinte</string>
     <string name="label_rewind_10">Recuar 10 segundos</string>
-    <string name="label_forward_30">Avançar 30 segundos</string>
+    <string name="label_forward_30">Avançar 15 segundos</string>
     <string name="label_brand">Podcast MC</string>
     <string name="no_date">Sem data</string>
     <string name="now">agora</string>
@@ -78,6 +78,10 @@
     <string name="error_search_podcasts">Não foi possível pesquisar podcasts (%1$d).</string>
     <string name="notification_channel_name">Novos episódios</string>
     <string name="notification_channel_description">Notificações quando chegam novos episódios aos podcasts subscritos.</string>
+    <string name="sync_notification_channel_name">Sincronização em segundo plano</string>
+    <string name="sync_notification_channel_description">Notificação permanente enquanto os podcasts são sincronizados em segundo plano.</string>
+    <string name="sync_in_progress_title">A sincronizar podcasts</string>
+    <string name="sync_in_progress_message">A verificar novos episódios em segundo plano.</string>
     <string name="notification_message_single_podcast">%1$s</string>
     <string name="notification_message_multiple_podcasts">%1$d podcasts com novidades</string>
 

@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -30,7 +31,16 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         player = exoPlayer
-        mediaSession = MediaSession.Builder(this, exoPlayer)
+        val transportPlayer = object : ForwardingPlayer(exoPlayer) {
+            override fun seekToNext() {
+                exoPlayer.seekForward()
+            }
+
+            override fun seekToPrevious() {
+                exoPlayer.seekBack()
+            }
+        }
+        mediaSession = MediaSession.Builder(this, transportPlayer)
             .setId("mcpodcasts-session")
             .setSessionActivity(createSessionActivity())
             .build()
@@ -70,6 +80,6 @@ class PlaybackService : MediaSessionService() {
 
     private companion object {
         const val SEEK_BACK_MS = 10_000L
-        const val SEEK_FORWARD_MS = 30_000L
+        const val SEEK_FORWARD_MS = 15_000L
     }
 }

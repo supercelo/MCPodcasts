@@ -62,7 +62,7 @@
     <string name="cd_previous">Précédent</string>
     <string name="cd_next">Suivant</string>
     <string name="label_rewind_10">Reculer de 10 secondes</string>
-    <string name="label_forward_30">Avancer de 30 secondes</string>
+    <string name="label_forward_30">Avancer de 15 secondes</string>
     <string name="label_brand">Podcast MC</string>
     <string name="no_date">Pas de date</string>
     <string name="now">maintenant</string>

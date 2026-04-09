@@ -1,6 +1,7 @@
 package com.example.mcpodcasts.notifications
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,33 +9,28 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.work.ForegroundInfo
 import com.example.mcpodcasts.MainActivity
 import com.example.mcpodcasts.R
 import com.example.mcpodcasts.data.repository.NewEpisodesSummary
 
 class EpisodeNotificationManager(private val context: Context) {
-    fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
-
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        val existingChannel = notificationManager.getNotificationChannel(CHANNEL_ID)
-        if (existingChannel != null) {
-            return
-        }
-
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                context.getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = context.getString(R.string.notification_channel_description)
-            }
+    fun ensureChannels() {
+        ensureChannel(
+            channelId = CHANNEL_ID,
+            nameRes = R.string.notification_channel_name,
+            descriptionRes = R.string.notification_channel_description,
+            importance = NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        ensureChannel(
+            channelId = SYNC_CHANNEL_ID,
+            nameRes = R.string.sync_notification_channel_name,
+            descriptionRes = R.string.sync_notification_channel_description,
+            importance = NotificationManager.IMPORTANCE_LOW,
         )
     }
 
@@ -75,6 +71,55 @@ class EpisodeNotificationManager(private val context: Context) {
         notificationManager.notify(SYNC_SUMMARY_NOTIFICATION_ID, notification)
     }
 
+    fun createSyncForegroundInfo(): ForegroundInfo {
+        val notification = NotificationCompat.Builder(context, SYNC_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(context.getString(R.string.sync_in_progress_title))
+            .setContentText(context.getString(R.string.sync_in_progress_message))
+            .setContentIntent(createContentIntent())
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                SYNC_FOREGROUND_NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            ForegroundInfo(SYNC_FOREGROUND_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun ensureChannel(
+        channelId: String,
+        nameRes: Int,
+        descriptionRes: Int,
+        importance: Int,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        val existingChannel = notificationManager.getNotificationChannel(channelId)
+        if (existingChannel != null) {
+            return
+        }
+
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                channelId,
+                context.getString(nameRes),
+                importance,
+            ).apply {
+                description = context.getString(descriptionRes)
+            }
+        )
+    }
+
     private fun createContentIntent(): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -101,6 +146,8 @@ class EpisodeNotificationManager(private val context: Context) {
 
     private companion object {
         const val CHANNEL_ID = "new-episodes"
+        const val SYNC_CHANNEL_ID = "podcast-sync"
+        const val SYNC_FOREGROUND_NOTIFICATION_ID = 99_000
         const val SYNC_SUMMARY_NOTIFICATION_ID = 99_001
     }
 }

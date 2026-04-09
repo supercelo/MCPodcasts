@@ -11,7 +11,7 @@ class MCPodcastsApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container.episodeNotificationManager.ensureChannel()
+        container.episodeNotificationManager.ensureChannels()
         val settings = runBlocking {
             container.settingsRepository.getCurrentSettings()
         }
