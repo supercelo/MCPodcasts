@@ -35,10 +35,15 @@
     <string name="theme_system">Sistema</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
+    <string name="theme_code_system">SYS</string>
+    <string name="theme_code_light">LHT</string>
+    <string name="theme_code_dark">DRK</string>
     <string name="settings_dynamic_color_title">Color dinámico</string>
     <string name="settings_dynamic_color_subtitle">Usar los colores del sistema en Android 12+.</string>
     <string name="settings_sync_notification_title">Notificación de sincronización automática</string>
     <string name="settings_sync_notification_subtitle">Muestra cuántos episodios nuevos se encontraron en cada sincronización automática.</string>
+    <string name="settings_volume_normalization_title">Normalización de volumen</string>
+    <string name="settings_volume_normalization_subtitle">Usa el procesamiento de volumen de Android para acercar el nivel entre episodios. El efecto depende del dispositivo y del formato de audio.</string>
     <string name="settings_refresh_title">Actualización automática</string>
     <string name="language_system">Sistema</string>
     <string name="language_portuguese">Portugués</string>
@@ -58,6 +63,11 @@
     <string name="subscription_notify_subtitle">Recibir notificaciones locales cuando lleguen nuevos episodios de este podcast.</string>
     <string name="subscription_skip_intro">Saltar intro: %1$ds</string>
     <string name="subscription_skip_outro">Saltar outro: %1$ds</string>
+    <string name="subscription_bulk_read_action">Marcar todos</string>
+    <string name="subscription_bulk_read_title">Marcar episodios</string>
+    <string name="subscription_bulk_read_message">¿Aplicar a todos los episodios de este podcast en la app?</string>
+    <string name="subscription_bulk_mark_all_read">Todos leídos</string>
+    <string name="subscription_bulk_mark_all_unread">Todos no leídos</string>
     <string name="action_save">Guardar</string>
     <string name="cd_previous">Anterior</string>
     <string name="cd_next">Siguiente</string>

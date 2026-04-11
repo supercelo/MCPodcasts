@@ -50,6 +50,19 @@ class PlayerConnection(
 
     private var controller: MediaController? = null
     private var queuePlaybackEpisodes: Map<String, QueueEpisode> = emptyMap()
+    private var singlePlaybackEpisode: CalendarEpisode? = null
+
+    /** True after user scrubbed into [0, intro) for current episode. */
+    private var userAllowsIntroPlayback: Boolean = false
+
+    /** True after user scrubbed into [outroStart, duration] for current episode. */
+    private var userAllowsOutroPlayback: Boolean = false
+
+    /** Prevents repeated seekToNext / seek-to-end when already handling outro for this item. */
+    private var outroSkipTriggeredForMediaId: String? = null
+
+    /** When this differs from [Player.currentMediaItem] id, clear [outroSkipTriggeredForMediaId]. */
+    private var outroMonitorLastMediaId: String? = null
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -83,6 +96,13 @@ class PlayerConnection(
                 delay(2_000)
             }
         }
+
+        scope.launch {
+            while (isActive) {
+                controller?.let { maybeAutoSkipOutro(it) }
+                delay(350)
+            }
+        }
     }
 
     fun playQueue(queue: List<QueueEpisode>, selectedEpisodeId: String) {
@@ -93,12 +113,17 @@ class PlayerConnection(
         }
 
         val selectedEpisode = queue[selectedIndex]
+        resetScrubSkipState()
+        singlePlaybackEpisode = null
         queuePlaybackEpisodes = queue.associateBy(QueueEpisode::episodeId)
+        val startMs = computeStartPositionWithIntro(
+            savedMs = selectedEpisode.playbackPositionMs,
+            introSkipSeconds = selectedEpisode.introSkipSeconds,
+        )
         mediaController.setMediaItems(
             queue.map(QueueEpisode::toMediaItem),
             selectedIndex,
-            selectedEpisode.playbackPositionMs
-                .coerceAtLeast(selectedEpisode.introSkipSeconds * 1_000L),
+            startMs,
         )
         mediaController.repeatMode = Player.REPEAT_MODE_OFF
         mediaController.prepare()
@@ -107,10 +132,16 @@ class PlayerConnection(
 
     fun playCalendarEpisode(episode: CalendarEpisode) {
         val mediaController = controller ?: return
+        resetScrubSkipState()
         queuePlaybackEpisodes = emptyMap()
+        singlePlaybackEpisode = episode
+        val startMs = computeStartPositionWithIntro(
+            savedMs = episode.playbackPositionMs,
+            introSkipSeconds = episode.introSkipSeconds,
+        )
         mediaController.setMediaItem(
             episode.toMediaItem(),
-            episode.playbackPositionMs.coerceAtLeast(0L),
+            startMs,
         )
         mediaController.repeatMode = Player.REPEAT_MODE_OFF
         mediaController.prepare()
@@ -137,6 +168,39 @@ class PlayerConnection(
 
     fun seekToPosition(positionMs: Long) {
         controller?.seekTo(positionMs.coerceAtLeast(0L))
+    }
+
+    /**
+     * Seek from the in-app progress bar: updates whether intro/outro zones may play
+     * (scrub into intro or outro) vs default skip behaviour.
+     */
+    fun seekToPositionFromUser(positionMs: Long) {
+        val mediaController = controller ?: return
+        val safe = positionMs.coerceAtLeast(0L)
+        mediaController.seekTo(safe)
+        val episodeId = mediaController.currentMediaItem?.mediaId ?: return
+        val skips = resolveSkipsForMedia(episodeId)
+        if (skips == null) {
+            userAllowsIntroPlayback = false
+            userAllowsOutroPlayback = false
+            return
+        }
+        val introMs = skips.first * 1_000L
+        val duration = mediaController.duration.takeIf { it > 0 } ?: 0L
+
+        userAllowsIntroPlayback = skips.first > 0 && safe < introMs
+
+        val outroMs = skips.second * 1_000L
+        userAllowsOutroPlayback = skips.second > 0 &&
+            duration > outroMs &&
+            safe >= duration - outroMs
+
+        if (skips.second > 0 && duration > outroMs) {
+            val outroStart = duration - outroMs
+            if (safe < outroStart) {
+                outroSkipTriggeredForMediaId = null
+            }
+        }
     }
 
     fun skipToNext() {
@@ -190,13 +254,18 @@ class PlayerConnection(
             return fromTag
         }
         return queuePlaybackEpisodes[item.mediaId]?.publishedAt?.takeIf { it > 0L }
+            ?: singlePlaybackEpisode
+                ?.takeIf { episode -> episode.episodeId == item.mediaId }
+                ?.publishedAt
+                ?.takeIf { it > 0L }
     }
 
     private fun persistPlayback(player: Player) {
         val episodeId = player.currentMediaItem?.mediaId ?: return
         val durationMs = player.duration.takeIf { it > 0 } ?: 0L
         val positionMs = player.currentPosition.coerceAtLeast(0L)
-        val outroSkipMs = queuePlaybackEpisodes[episodeId]?.outroSkipSeconds?.times(1_000L) ?: 0L
+        val outroSkipSec = resolveSkipsForMedia(episodeId)?.second ?: 0
+        val outroSkipMs = outroSkipSec * 1_000L
         val completionThresholdMs = if (durationMs > 0L && outroSkipMs in 1 until durationMs) {
             durationMs - outroSkipMs
         } else {
@@ -212,6 +281,82 @@ class PlayerConnection(
                 isRead = isCompleted,
                 isCompleted = isCompleted,
             )
+        }
+    }
+
+    private fun resetScrubSkipState() {
+        userAllowsIntroPlayback = false
+        userAllowsOutroPlayback = false
+        outroSkipTriggeredForMediaId = null
+        outroMonitorLastMediaId = null
+    }
+
+    /**
+     * Initial seek when loading: skip intro unless the user previously resumed inside it (saved in (0, intro)).
+     */
+    private fun computeStartPositionWithIntro(savedMs: Long, introSkipSeconds: Int): Long {
+        val saved = savedMs.coerceAtLeast(0L)
+        if (introSkipSeconds <= 0) return saved
+        val introMs = introSkipSeconds * 1_000L
+        return when {
+            saved == 0L -> introMs
+            saved < introMs -> saved
+            else -> saved
+        }
+    }
+
+    private fun resolveSkipsForMedia(episodeId: String): Pair<Int, Int>? {
+        queuePlaybackEpisodes[episodeId]?.let { episode ->
+            return episode.introSkipSeconds to episode.outroSkipSeconds
+        }
+        singlePlaybackEpisode?.takeIf { it.episodeId == episodeId }?.let { episode ->
+            return episode.introSkipSeconds to episode.outroSkipSeconds
+        }
+        return null
+    }
+
+    /**
+     * Poll (~350 ms): if playback enters the outro zone without an explicit user scrub into it,
+     * mark the episode complete and skip to the next queue item or end-of-content for a single item.
+     */
+    private fun maybeAutoSkipOutro(player: Player) {
+        if (!player.isPlaying) return
+        val episodeId = player.currentMediaItem?.mediaId ?: return
+        if (episodeId != outroMonitorLastMediaId) {
+            outroMonitorLastMediaId = episodeId
+            outroSkipTriggeredForMediaId = null
+        }
+        val skips = resolveSkipsForMedia(episodeId) ?: return
+        val outroSec = skips.second
+        if (outroSec <= 0) return
+        val duration = player.duration.takeIf { it > 0 } ?: return
+        val outroMs = outroSec * 1_000L
+        if (outroMs >= duration) return
+        val outroStart = duration - outroMs
+        val position = player.currentPosition
+        if (userAllowsOutroPlayback) return
+        if (position < outroStart) return
+        if (outroSkipTriggeredForMediaId == episodeId) return
+
+        outroSkipTriggeredForMediaId = episodeId
+        scope.launch(Dispatchers.IO) {
+            repository.updatePlaybackState(
+                episodeId = episodeId,
+                positionMs = 0L,
+                durationMs = duration,
+                isRead = true,
+                isCompleted = true,
+            )
+        }
+        if (player.mediaItemCount > 1) {
+            userAllowsIntroPlayback = false
+            userAllowsOutroPlayback = false
+            player.seekToNextMediaItem()
+        } else {
+            userAllowsIntroPlayback = false
+            userAllowsOutroPlayback = false
+            player.seekTo(duration)
+            player.pause()
         }
     }
 }

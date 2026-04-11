@@ -22,6 +22,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+enum class AppMainTab {
+    Queue,
+    Calendar,
+    Subscriptions,
+}
+
 class PodcastsViewModel(
     application: Application,
     private val repository: PodcastRepository,
@@ -60,6 +66,13 @@ class PodcastsViewModel(
 
     private val _searchResults = MutableStateFlow<List<DiscoveredPodcast>>(emptyList())
     val searchResults: StateFlow<List<DiscoveredPodcast>> = _searchResults.asStateFlow()
+
+    private val _mainTab = MutableStateFlow(AppMainTab.Queue)
+    val mainTab: StateFlow<AppMainTab> = _mainTab.asStateFlow()
+
+    fun setMainTab(tab: AppMainTab) {
+        _mainTab.value = tab
+    }
 
     fun addSubscription(feedUrl: String) {
         viewModelScope.launch {
@@ -145,6 +158,25 @@ class PodcastsViewModel(
                 episodeId = episodeId,
                 isRead = isRead,
             )
+        }
+    }
+
+    fun markAllEpisodesReadForSubscription(
+        feedUrl: String,
+        isRead: Boolean,
+    ) {
+        viewModelScope.launch {
+            repository.markAllEpisodesReadForPodcast(
+                feedUrl = feedUrl,
+                isRead = isRead,
+            )
+        }
+    }
+
+    fun removeSubscription(feedUrl: String) {
+        viewModelScope.launch {
+            repository.removeSubscription(feedUrl)
+            _message.value = getApplication<Application>().getString(R.string.msg_podcast_removed)
         }
     }
 

@@ -40,6 +40,9 @@ interface PodcastDao {
         outroSkipSeconds: Int,
     )
 
+    @Query("DELETE FROM podcasts WHERE feedUrl = :feedUrl")
+    suspend fun deletePodcast(feedUrl: String)
+
     @Query(
         """
         SELECT
@@ -138,6 +141,7 @@ interface EpisodeDao {
             episodes.podcastId AS podcastId,
             podcasts.title AS podcastTitle,
             episodes.title AS title,
+            episodes.summary AS summary,
             episodes.artworkUrl AS artworkUrl,
             episodes.publishedAt AS publishedAt,
             episodes.durationLabel AS durationLabel,
@@ -188,6 +192,22 @@ interface EpisodeDao {
     )
     suspend fun markEpisodeRead(
         episodeId: String,
+        isRead: Boolean,
+    )
+
+    @Query(
+        """
+        UPDATE episodes
+        SET isRead = :isRead,
+            playbackPositionMs = CASE
+                WHEN :isRead THEN 0
+                ELSE playbackPositionMs
+            END
+        WHERE podcastId = :podcastId
+        """
+    )
+    suspend fun markAllEpisodesReadForPodcast(
+        podcastId: String,
         isRead: Boolean,
     )
 }

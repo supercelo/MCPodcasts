@@ -57,6 +57,12 @@ class SettingsViewModel(
         }
     }
 
+    fun setVolumeNormalizationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setVolumeNormalizationEnabled(enabled)
+        }
+    }
+
     companion object {
         fun factory(): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             override fun <T : androidx.lifecycle.ViewModel> create(

@@ -106,6 +106,16 @@ class PodcastRepository(
         )
     }
 
+    suspend fun markAllEpisodesReadForPodcast(
+        feedUrl: String,
+        isRead: Boolean,
+    ) = withContext(Dispatchers.IO) {
+        episodeDao.markAllEpisodesReadForPodcast(
+            podcastId = feedUrl,
+            isRead = isRead,
+        )
+    }
+
     suspend fun updateSubscriptionSettings(
         feedUrl: String,
         notifyNewEpisodes: Boolean,
@@ -120,6 +130,13 @@ class PodcastRepository(
             introSkipSeconds = introSkipSeconds.coerceAtLeast(0),
             outroSkipSeconds = outroSkipSeconds.coerceAtLeast(0),
         )
+    }
+
+    suspend fun removeSubscription(feedUrl: String) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            episodeDao.deleteEpisodesForPodcast(feedUrl)
+            podcastDao.deletePodcast(feedUrl)
+        }
     }
 
     private suspend fun syncFeed(

@@ -42,6 +42,8 @@ data class AppSettings(
     val appLanguage: AppLanguage = AppLanguage.System,
     val refreshIntervalHours: Int = 1,
     val syncSummaryNotificationsEnabled: Boolean = true,
+    /** When true, enables Android loudness enhancement on the playback audio session. */
+    val volumeNormalizationEnabled: Boolean = false,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -60,6 +62,7 @@ class SettingsRepository(private val context: Context) {
             appLanguage = appLanguage,
             refreshIntervalHours = preferences[REFRESH_INTERVAL_HOURS_KEY] ?: 1,
             syncSummaryNotificationsEnabled = preferences[SYNC_SUMMARY_NOTIFICATIONS_KEY] ?: true,
+            volumeNormalizationEnabled = preferences[VOLUME_NORMALIZATION_KEY] ?: false,
         )
     }
 
@@ -91,10 +94,17 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setVolumeNormalizationEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { preferences ->
+            preferences[VOLUME_NORMALIZATION_KEY] = enabled
+        }
+    }
+
     private companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val APP_LANGUAGE_KEY = stringPreferencesKey("app_language")
         val REFRESH_INTERVAL_HOURS_KEY = intPreferencesKey("refresh_interval_hours")
         val SYNC_SUMMARY_NOTIFICATIONS_KEY = booleanPreferencesKey("sync_summary_notifications")
+        val VOLUME_NORMALIZATION_KEY = booleanPreferencesKey("volume_normalization")
     }
 }

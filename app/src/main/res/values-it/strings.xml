@@ -35,10 +35,15 @@
     <string name="theme_system">Sistema</string>
     <string name="theme_light">Chiaro</string>
     <string name="theme_dark">Scuro</string>
+    <string name="theme_code_system">SYS</string>
+    <string name="theme_code_light">LHT</string>
+    <string name="theme_code_dark">DRK</string>
     <string name="settings_dynamic_color_title">Colore dinamico</string>
     <string name="settings_dynamic_color_subtitle">Usa i colori di sistema su Android 12+.</string>
     <string name="settings_sync_notification_title">Notifica di sincronizzazione automatica</string>
     <string name="settings_sync_notification_subtitle">Mostra quanti nuovi episodi sono stati trovati durante ogni sincronizzazione automatica.</string>
+    <string name="settings_volume_normalization_title">Normalizzazione del volume</string>
+    <string name="settings_volume_normalization_subtitle">Usa l\'elaborazione del volume di Android in riproduzione per avvicinare i livelli tra episodi. L\'effetto dipende dal dispositivo e dal formato audio.</string>
     <string name="settings_refresh_title">Aggiornamento automatico</string>
     <string name="language_system">Sistema</string>
     <string name="language_portuguese">Portoghese</string>
@@ -58,6 +63,11 @@
     <string name="subscription_notify_subtitle">Ricevi notifiche locali quando arrivano nuovi episodi per questo podcast.</string>
     <string name="subscription_skip_intro">Salta intro: %1$ds</string>
     <string name="subscription_skip_outro">Salta outro: %1$ds</string>
+    <string name="subscription_bulk_read_action">Segna tutti</string>
+    <string name="subscription_bulk_read_title">Segna episodi</string>
+    <string name="subscription_bulk_read_message">Applicare a tutti gli episodi di questo podcast nell\'app?</string>
+    <string name="subscription_bulk_mark_all_read">Tutti letti</string>
+    <string name="subscription_bulk_mark_all_unread">Tutti non letti</string>
     <string name="action_save">Salva</string>
     <string name="cd_previous">Precedente</string>
     <string name="cd_next">Successivo</string>

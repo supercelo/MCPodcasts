@@ -2,17 +2,30 @@ package com.example.mcpodcasts.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.mcpodcasts.MainActivity
+import com.example.mcpodcasts.MCPodcastsApplication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var volumeNormalizationEnabled: Boolean = false
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -29,6 +42,25 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(SEEK_BACK_MS)
             .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
             .build()
+
+        exoPlayer.addListener(
+            object : Player.Listener {
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    applyLoudnessEnhancer(audioSessionId)
+                }
+            },
+        )
+
+        val app = application as MCPodcastsApplication
+        serviceScope.launch {
+            app.container.settingsRepository.settings
+                .map { it.volumeNormalizationEnabled }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    volumeNormalizationEnabled = enabled
+                    applyLoudnessEnhancer(exoPlayer.audioSessionId)
+                }
+        }
 
         player = exoPlayer
         val transportPlayer = object : ForwardingPlayer(exoPlayer) {
@@ -58,11 +90,29 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
+        releaseLoudnessEnhancer()
         mediaSession?.release()
         player?.release()
         mediaSession = null
         player = null
         super.onDestroy()
+    }
+
+    private fun releaseLoudnessEnhancer() {
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
+    }
+
+    private fun applyLoudnessEnhancer(audioSessionId: Int) {
+        releaseLoudnessEnhancer()
+        if (!volumeNormalizationEnabled) return
+        if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
+        runCatching {
+            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                enabled = true
+            }
+        }
     }
 
     private fun createSessionActivity(): PendingIntent {

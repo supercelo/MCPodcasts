@@ -41,6 +41,10 @@ class PlayerViewModel(
         playerConnection.seekToPosition(positionMs)
     }
 
+    fun seekToPositionFromUser(positionMs: Long) {
+        playerConnection.seekToPositionFromUser(positionMs)
+    }
+
     fun skipToPrevious() {
         playerConnection.skipToPrevious()
     }

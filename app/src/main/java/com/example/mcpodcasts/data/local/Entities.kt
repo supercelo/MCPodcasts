@@ -91,6 +91,7 @@ data class CalendarEpisode(
     val podcastId: String,
     val podcastTitle: String,
     val title: String,
+    val summary: String?,
     val artworkUrl: String?,
     val publishedAt: Long,
     val durationLabel: String?,
