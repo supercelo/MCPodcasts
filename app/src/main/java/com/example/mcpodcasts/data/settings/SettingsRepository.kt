@@ -6,7 +6,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -40,7 +39,6 @@ enum class AppLanguage(val languageTag: String) {
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
     val appLanguage: AppLanguage = AppLanguage.System,
-    val refreshIntervalHours: Int = 1,
     val syncSummaryNotificationsEnabled: Boolean = true,
     /** When true, enables Android loudness enhancement on the playback audio session. */
     val volumeNormalizationEnabled: Boolean = false,
@@ -60,7 +58,6 @@ class SettingsRepository(private val context: Context) {
         AppSettings(
             themeMode = themeMode,
             appLanguage = appLanguage,
-            refreshIntervalHours = preferences[REFRESH_INTERVAL_HOURS_KEY] ?: 1,
             syncSummaryNotificationsEnabled = preferences[SYNC_SUMMARY_NOTIFICATIONS_KEY] ?: true,
             volumeNormalizationEnabled = preferences[VOLUME_NORMALIZATION_KEY] ?: false,
         )
@@ -82,12 +79,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setRefreshIntervalHours(hours: Int) {
-        context.settingsDataStore.edit { preferences ->
-            preferences[REFRESH_INTERVAL_HOURS_KEY] = hours.coerceAtLeast(1)
-        }
-    }
-
     suspend fun setSyncSummaryNotificationsEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { preferences ->
             preferences[SYNC_SUMMARY_NOTIFICATIONS_KEY] = enabled
@@ -100,11 +91,25 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun getLastPlayedEpisodeId(): String? {
+        return context.settingsDataStore.data.first()[LAST_PLAYED_EPISODE_ID_KEY]
+    }
+
+    suspend fun setLastPlayedEpisodeId(episodeId: String?) {
+        context.settingsDataStore.edit { preferences ->
+            if (episodeId.isNullOrBlank()) {
+                preferences.remove(LAST_PLAYED_EPISODE_ID_KEY)
+            } else {
+                preferences[LAST_PLAYED_EPISODE_ID_KEY] = episodeId
+            }
+        }
+    }
+
     private companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val APP_LANGUAGE_KEY = stringPreferencesKey("app_language")
-        val REFRESH_INTERVAL_HOURS_KEY = intPreferencesKey("refresh_interval_hours")
         val SYNC_SUMMARY_NOTIFICATIONS_KEY = booleanPreferencesKey("sync_summary_notifications")
         val VOLUME_NORMALIZATION_KEY = booleanPreferencesKey("volume_normalization")
+        val LAST_PLAYED_EPISODE_ID_KEY = stringPreferencesKey("last_played_episode_id")
     }
 }

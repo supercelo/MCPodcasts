@@ -46,6 +46,7 @@ class AppContainer(context: Context) {
         PlayerConnection(
             context = appContext,
             repository = podcastRepository,
+            settingsRepository = settingsRepository,
         )
     }
 }

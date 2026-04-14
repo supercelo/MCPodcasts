@@ -11,7 +11,6 @@ import com.example.mcpodcasts.MCPodcastsApplication
 import com.example.mcpodcasts.data.settings.AppSettings
 import com.example.mcpodcasts.data.settings.SettingsRepository
 import com.example.mcpodcasts.data.settings.ThemeMode
-import com.example.mcpodcasts.work.PodcastSyncScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -38,16 +37,6 @@ class SettingsViewModel(
         viewModelScope.launch {
             repository.setAppLanguage(appLanguage)
             AppCompatDelegate.setApplicationLocales(appLanguage.toLocaleListCompat())
-        }
-    }
-
-    fun setRefreshIntervalHours(hours: Int) {
-        viewModelScope.launch {
-            repository.setRefreshIntervalHours(hours)
-            PodcastSyncScheduler.ensureScheduled(
-                context = getApplication(),
-                refreshIntervalHours = hours,
-            )
         }
     }
 

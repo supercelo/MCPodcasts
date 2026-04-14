@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,35 +16,46 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Forward30
+import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Hearing
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,6 +75,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
@@ -85,6 +99,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -99,6 +115,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.times
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -135,8 +152,6 @@ private val IconScale = 1.1f
 private val IconButtonShape = RoundedCornerShape(4.dp)
 private val ReadStateStrokeWidth = 3.dp
 
-private val settingsRefreshHourOptions = listOf(1, 3, 6, 12, 24)
-
 private fun scaledDp(base: Dp): Dp = base * IconScale
 
 private sealed class EpisodeDetailTarget {
@@ -147,19 +162,22 @@ private sealed class EpisodeDetailTarget {
 private const val SubFilterRecordSep = '\u001f'
 private const val SubFilterFieldSep = '\u001e'
 
-private fun encodeSubscriptionFilters(map: Map<String, Pair<Boolean, Boolean>>): String =
+private fun encodeSubscriptionFilters(map: Map<String, Pair<QueueReadFilter, Boolean>>): String =
     map.entries.joinToString(SubFilterRecordSep.toString()) { (k, v) ->
-        "$k$SubFilterFieldSep${v.first}$SubFilterFieldSep${v.second}"
+        "$k$SubFilterFieldSep${v.first.name}$SubFilterFieldSep${v.second}"
     }
 
-private fun decodeSubscriptionFilters(encoded: String): Map<String, Pair<Boolean, Boolean>> =
+private fun decodeSubscriptionFilters(encoded: String): Map<String, Pair<QueueReadFilter, Boolean>> =
     if (encoded.isEmpty()) {
         emptyMap()
     } else {
         encoded.split(SubFilterRecordSep).mapNotNull { part ->
             val bits = part.split(SubFilterFieldSep)
             if (bits.size == 3) {
-                bits[0] to (bits[1].toBoolean() to bits[2].toBoolean())
+                val filter = runCatching { QueueReadFilter.valueOf(bits[1]) }.getOrElse {
+                    if (bits[1].toBoolean()) QueueReadFilter.Unread else QueueReadFilter.All
+                }
+                bits[0] to (filter to bits[2].toBoolean())
             } else {
                 null
             }
@@ -171,6 +189,7 @@ private fun AppMainTab.titleRes(): Int = when (this) {
     AppMainTab.Queue -> R.string.tab_queue
     AppMainTab.Calendar -> R.string.tab_calendar
     AppMainTab.Subscriptions -> R.string.tab_subscriptions
+    AppMainTab.Settings -> R.string.tab_settings
 }
 
 private enum class QueueSortOrder {
@@ -203,24 +222,24 @@ internal fun PodcastAppContent(
     val selectedTab by podcastsViewModel.mainTab.collectAsStateWithLifecycle()
 
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
-    var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
     var showPlayerSheet by rememberSaveable { mutableStateOf(false) }
     var selectedSubscriptionFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSubscriptionSettingsFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var queueSortOrder by rememberSaveable { mutableStateOf(QueueSortOrder.NewestFirst) }
     var queueReadFilter by rememberSaveable { mutableStateOf(QueueReadFilter.Unread) }
     var queuePodcastFilterFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
-    var showQueueSortMenu by remember { mutableStateOf(false) }
-    var showQueueReadMenu by remember { mutableStateOf(false) }
     var showQueuePodcastMenu by remember { mutableStateOf(false) }
+    var calendarReadFilter by rememberSaveable { mutableStateOf(QueueReadFilter.All) }
+    var calendarPodcastFilterFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var showCalendarPodcastMenu by remember { mutableStateOf(false) }
     var calendarSelectedDateIso by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     var subscriptionFiltersEncoded by rememberSaveable { mutableStateOf("") }
     val subscriptionFilters = remember(subscriptionFiltersEncoded) {
         decodeSubscriptionFilters(subscriptionFiltersEncoded)
     }
-    fun updateSubscriptionFilters(feedUrl: String, unreadOnly: Boolean, ascendingOrder: Boolean) {
+    fun updateSubscriptionFilters(feedUrl: String, readFilter: QueueReadFilter, ascendingOrder: Boolean) {
         val next = decodeSubscriptionFilters(subscriptionFiltersEncoded).toMutableMap()
-        next[feedUrl] = unreadOnly to ascendingOrder
+        next[feedUrl] = readFilter to ascendingOrder
         subscriptionFiltersEncoded = encodeSubscriptionFilters(next)
     }
     var addSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -234,6 +253,21 @@ internal fun PodcastAppContent(
         subscriptions
             .filter(SubscriptionSummary::includeInQueue)
             .sortedBy { it.title.lowercase(Locale.getDefault()) }
+    }
+    val filteredCalendarEpisodes = remember(calendarEpisodes, calendarReadFilter, calendarPodcastFilterFeedUrl) {
+        calendarEpisodes
+            .asSequence()
+            .filter { episode ->
+                when (calendarReadFilter) {
+                    QueueReadFilter.All -> true
+                    QueueReadFilter.Unread -> !episode.isRead
+                    QueueReadFilter.Read -> episode.isRead
+                }
+            }
+            .filter { episode ->
+                calendarPodcastFilterFeedUrl == null || episode.podcastId == calendarPodcastFilterFeedUrl
+            }
+            .toList()
     }
     val filteredQueue = remember(queue, queueSortOrder, queueReadFilter, queuePodcastFilterFeedUrl) {
         queue
@@ -260,9 +294,9 @@ internal fun PodcastAppContent(
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val playerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val subscriptionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val subscriptionSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val episodeDetailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val shouldShowMiniPlayer = playerState.hasMedia ||
@@ -288,6 +322,14 @@ internal fun PodcastAppContent(
         }
     }
 
+    LaunchedEffect(subscriptions, calendarPodcastFilterFeedUrl) {
+        if (calendarPodcastFilterFeedUrl != null &&
+            subscriptions.none { it.feedUrl == calendarPodcastFilterFeedUrl }
+        ) {
+            calendarPodcastFilterFeedUrl = null
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -307,6 +349,7 @@ internal fun PodcastAppContent(
                                     subscriptions.size,
                                     subscriptions.size,
                                 )
+                                AppMainTab.Settings -> stringResource(R.string.settings_subtitle)
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -318,82 +361,33 @@ internal fun PodcastAppContent(
                 ),
                 actions = {
                     if (selectedTab == AppMainTab.Queue) {
-                        Box {
-                            IconButton(
-                                onClick = { showQueueSortMenu = true },
-                                shape = IconButtonShape,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.SwapVert,
-                                    contentDescription = stringResource(R.string.cd_queue_sort),
-                                    modifier = Modifier.size(scaledDp(24.dp)),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showQueueSortMenu,
-                                onDismissRequest = { showQueueSortMenu = false },
-                            ) {
-                                QueueSortOrder.entries.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                stringResource(
-                                                    when (option) {
-                                                        QueueSortOrder.NewestFirst -> R.string.sort_date_desc
-                                                        QueueSortOrder.OldestFirst -> R.string.sort_date_asc
-                                                    }
-                                                )
-                                            )
-                                        },
-                                        onClick = {
-                                            queueSortOrder = option
-                                            showQueueSortMenu = false
-                                        },
-                                        trailingIcon = {
-                                            if (queueSortOrder == option) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Done,
-                                                    contentDescription = null,
-                                                )
-                                            }
-                                        },
-                                    )
+                        IconButton(
+                            onClick = {
+                                queueSortOrder = when (queueSortOrder) {
+                                    QueueSortOrder.NewestFirst -> QueueSortOrder.OldestFirst
+                                    QueueSortOrder.OldestFirst -> QueueSortOrder.NewestFirst
                                 }
-                            }
+                            },
+                            shape = IconButtonShape,
+                        ) {
+                            Icon(
+                                imageVector = when (queueSortOrder) {
+                                    QueueSortOrder.NewestFirst -> Icons.Outlined.ArrowDownward
+                                    QueueSortOrder.OldestFirst -> Icons.Outlined.ArrowUpward
+                                },
+                                contentDescription = stringResource(R.string.cd_sort_order),
+                                modifier = Modifier.size(scaledDp(24.dp)),
+                            )
                         }
-                        Box {
-                            IconButton(
-                                onClick = { showQueueReadMenu = true },
-                                shape = IconButtonShape,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.FilterAlt,
-                                    contentDescription = stringResource(R.string.cd_queue_read_filter),
-                                    modifier = Modifier.size(scaledDp(24.dp)),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showQueueReadMenu,
-                                onDismissRequest = { showQueueReadMenu = false },
-                            ) {
-                                QueueReadFilter.entries.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(option.labelRes())) },
-                                        onClick = {
-                                            queueReadFilter = option
-                                            showQueueReadMenu = false
-                                        },
-                                        trailingIcon = {
-                                            if (queueReadFilter == option) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Done,
-                                                    contentDescription = null,
-                                                )
-                                            }
-                                        },
-                                    )
-                                }
-                            }
+                        IconButton(
+                            onClick = { queueReadFilter = queueReadFilter.next() },
+                            shape = IconButtonShape,
+                        ) {
+                            Icon(
+                                imageVector = queueReadFilter.icon(),
+                                contentDescription = stringResource(R.string.cd_filter_read_state),
+                                modifier = Modifier.size(scaledDp(24.dp)),
+                            )
                         }
                         Box {
                             IconButton(
@@ -404,6 +398,11 @@ internal fun PodcastAppContent(
                                     imageVector = Icons.Outlined.Podcasts,
                                     contentDescription = stringResource(R.string.cd_queue_podcast_filter),
                                     modifier = Modifier.size(scaledDp(24.dp)),
+                                    tint = if (queuePodcastFilterFeedUrl != null) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
                                 )
                             }
                             DropdownMenu(
@@ -418,10 +417,7 @@ internal fun PodcastAppContent(
                                     },
                                     trailingIcon = {
                                         if (queuePodcastFilterFeedUrl == null) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Done,
-                                                contentDescription = null,
-                                            )
+                                            Icon(imageVector = Icons.Outlined.Done, contentDescription = null)
                                         }
                                     },
                                 )
@@ -434,10 +430,67 @@ internal fun PodcastAppContent(
                                         },
                                         trailingIcon = {
                                             if (queuePodcastFilterFeedUrl == subscription.feedUrl) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Done,
-                                                    contentDescription = null,
-                                                )
+                                                Icon(imageVector = Icons.Outlined.Done, contentDescription = null)
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (selectedTab == AppMainTab.Calendar) {
+                        IconButton(
+                            onClick = { calendarReadFilter = calendarReadFilter.next() },
+                            shape = IconButtonShape,
+                        ) {
+                            Icon(
+                                imageVector = calendarReadFilter.icon(),
+                                contentDescription = stringResource(R.string.cd_calendar_read_filter),
+                                modifier = Modifier.size(scaledDp(24.dp)),
+                            )
+                        }
+                        Box {
+                            IconButton(
+                                onClick = { showCalendarPodcastMenu = true },
+                                shape = IconButtonShape,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Podcasts,
+                                    contentDescription = stringResource(R.string.cd_calendar_podcast_filter),
+                                    modifier = Modifier.size(scaledDp(24.dp)),
+                                    tint = if (calendarPodcastFilterFeedUrl != null) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showCalendarPodcastMenu,
+                                onDismissRequest = { showCalendarPodcastMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.filter_all_podcasts)) },
+                                    onClick = {
+                                        calendarPodcastFilterFeedUrl = null
+                                        showCalendarPodcastMenu = false
+                                    },
+                                    trailingIcon = {
+                                        if (calendarPodcastFilterFeedUrl == null) {
+                                            Icon(imageVector = Icons.Outlined.Done, contentDescription = null)
+                                        }
+                                    },
+                                )
+                                subscriptions.forEach { subscription ->
+                                    DropdownMenuItem(
+                                        text = { Text(subscription.title) },
+                                        onClick = {
+                                            calendarPodcastFilterFeedUrl = subscription.feedUrl
+                                            showCalendarPodcastMenu = false
+                                        },
+                                        trailingIcon = {
+                                            if (calendarPodcastFilterFeedUrl == subscription.feedUrl) {
+                                                Icon(imageVector = Icons.Outlined.Done, contentDescription = null)
                                             }
                                         },
                                     )
@@ -446,6 +499,17 @@ internal fun PodcastAppContent(
                         }
                     }
                     if (selectedTab == AppMainTab.Subscriptions) {
+                        val lastSyncedAt = remember(subscriptions) {
+                            subscriptions.maxOfOrNull { it.lastSyncedAt } ?: 0L
+                        }
+                        if (lastSyncedAt > 0L) {
+                            Text(
+                                text = lastSyncedAt.asFriendlyDateTime(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 4.dp),
+                            )
+                        }
                         IconButton(
                             onClick = podcastsViewModel::refreshSubscriptions,
                             enabled = !isRefreshing,
@@ -464,16 +528,6 @@ internal fun PodcastAppContent(
                                 )
                             }
                         }
-                    }
-                    IconButton(
-                        onClick = { showSettingsSheet = true },
-                        shape = IconButtonShape,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = stringResource(R.string.cd_settings),
-                            modifier = Modifier.size(scaledDp(26.dp)),
-                        )
                     }
                 },
             )
@@ -541,6 +595,18 @@ internal fun PodcastAppContent(
                         },
                         label = { Text(stringResource(R.string.tab_subscriptions)) },
                     )
+                    NavigationBarItem(
+                        selected = selectedTab == AppMainTab.Settings,
+                        onClick = { podcastsViewModel.setMainTab(AppMainTab.Settings) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(scaledDp(26.dp)),
+                            )
+                        },
+                        label = { Text(stringResource(R.string.tab_settings)) },
+                    )
                 }
             }
         },
@@ -549,6 +615,8 @@ internal fun PodcastAppContent(
             AppMainTab.Queue -> CompactQueueScreen(
                 queue = filteredQueue,
                 hasEpisodes = queue.isNotEmpty(),
+                isRefreshing = isRefreshing,
+                onRefresh = podcastsViewModel::refreshSubscriptions,
                 onPlayEpisode = { episodeId ->
                     playerViewModel.playQueue(filteredQueue, episodeId)
                 },
@@ -560,7 +628,7 @@ internal fun PodcastAppContent(
             )
 
             AppMainTab.Calendar -> CalendarScreen(
-                episodes = calendarEpisodes,
+                episodes = filteredCalendarEpisodes,
                 selectedDateIso = calendarSelectedDateIso,
                 onSelectedDateIsoChange = { calendarSelectedDateIso = it },
                 onPlayEpisode = playerViewModel::playCalendarEpisode,
@@ -579,6 +647,17 @@ internal fun PodcastAppContent(
                 onOpenSettings = { feedUrl ->
                     selectedSubscriptionSettingsFeedUrl = feedUrl
                 },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            )
+
+            AppMainTab.Settings -> AppSettingsContent(
+                settings = settings,
+                onAppLanguageSelected = settingsViewModel::setAppLanguage,
+                onThemeSelected = settingsViewModel::setThemeMode,
+                onSyncSummaryNotificationsChanged = settingsViewModel::setSyncSummaryNotificationsEnabled,
+                onVolumeNormalizationChanged = settingsViewModel::setVolumeNormalizationEnabled,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -618,22 +697,6 @@ internal fun PodcastAppContent(
         }
     }
 
-    if (showSettingsSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSettingsSheet = false },
-            sheetState = settingsSheetState,
-        ) {
-            AppSettingsSheet(
-                settings = settings,
-                onAppLanguageSelected = settingsViewModel::setAppLanguage,
-                onThemeSelected = settingsViewModel::setThemeMode,
-                onRefreshIntervalSelected = settingsViewModel::setRefreshIntervalHours,
-                onSyncSummaryNotificationsChanged = settingsViewModel::setSyncSummaryNotificationsEnabled,
-                onVolumeNormalizationChanged = settingsViewModel::setVolumeNormalizationEnabled,
-            )
-        }
-    }
-
     if (selectedSubscriptionFeedUrl != null) {
         val subscription = subscriptions.firstOrNull { it.feedUrl == selectedSubscriptionFeedUrl }
         if (subscription != null) {
@@ -644,15 +707,16 @@ internal fun PodcastAppContent(
                 SubscriptionEpisodesSheet(
                     subscription = subscription,
                     episodes = selectedSubscriptionEpisodes,
-                    unreadOnly = subscriptionFilters[subscription.feedUrl]?.first ?: false,
+                    readFilter = subscriptionFilters[subscription.feedUrl]?.first ?: QueueReadFilter.All,
                     ascendingOrder = subscriptionFilters[subscription.feedUrl]?.second ?: false,
-                    onUnreadOnlyChange = { unread ->
+                    onReadFilterChange = { filter ->
                         val asc = subscriptionFilters[subscription.feedUrl]?.second ?: false
-                        updateSubscriptionFilters(subscription.feedUrl, unread, asc)
+                        updateSubscriptionFilters(subscription.feedUrl, filter, asc)
                     },
-                    onAscendingOrderChange = { asc ->
-                        val unread = subscriptionFilters[subscription.feedUrl]?.first ?: false
-                        updateSubscriptionFilters(subscription.feedUrl, unread, asc)
+                    onToggleSortOrder = {
+                        val currentAsc = subscriptionFilters[subscription.feedUrl]?.second ?: false
+                        val filter = subscriptionFilters[subscription.feedUrl]?.first ?: QueueReadFilter.All
+                        updateSubscriptionFilters(subscription.feedUrl, filter, !currentAsc)
                     },
                     onBulkMarkEpisodes = { isRead ->
                         podcastsViewModel.markAllEpisodesReadForSubscription(
@@ -667,6 +731,11 @@ internal fun PodcastAppContent(
                     onToggleRead = { episodeId, isRead ->
                         podcastsViewModel.markEpisodeRead(episodeId, isRead)
                     },
+                    onOpenSettings = {
+                        val feedUrl = subscription.feedUrl
+                        selectedSubscriptionFeedUrl = null
+                        selectedSubscriptionSettingsFeedUrl = feedUrl
+                    },
                 )
             }
         }
@@ -675,7 +744,7 @@ internal fun PodcastAppContent(
     if (selectedSubscription != null) {
         ModalBottomSheet(
             onDismissRequest = { selectedSubscriptionSettingsFeedUrl = null },
-            sheetState = subscriptionSheetState,
+            sheetState = subscriptionSettingsSheetState,
         ) {
             SubscriptionPreferencesSheet(
                 subscription = selectedSubscription,
@@ -698,6 +767,9 @@ internal fun PodcastAppContent(
                     }
                     if (queuePodcastFilterFeedUrl == feedUrl) {
                         queuePodcastFilterFeedUrl = null
+                    }
+                    if (calendarPodcastFilterFeedUrl == feedUrl) {
+                        calendarPodcastFilterFeedUrl = null
                     }
                 },
             )
@@ -766,42 +838,52 @@ internal fun PodcastAppContent(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompactQueueScreen(
     queue: List<QueueEpisode>,
     hasEpisodes: Boolean,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     onOpenEpisodeDetail: (QueueEpisode) -> Unit,
     onMarkEpisodeRead: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (queue.isEmpty()) {
-        AppEmptyState(
-            title = stringResource(
-                if (hasEpisodes) R.string.queue_filtered_empty_title else R.string.queue_empty_title,
-            ),
-            subtitle = stringResource(
-                if (hasEpisodes) R.string.queue_filtered_empty_subtitle else R.string.queue_empty_subtitle,
-            ),
-            modifier = modifier,
-        )
-        return
-    }
-
-    LazyColumn(
+    val pullState = rememberPullToRefreshState()
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        state = pullState,
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(
-            items = queue,
-            key = QueueEpisode::episodeId,
-        ) { episode ->
-            CompactQueueCard(
-                episode = episode,
-                onPlayEpisode = { onPlayEpisode(episode.episodeId) },
-                onOpenDetail = { onOpenEpisodeDetail(episode) },
-                onToggleRead = { onMarkEpisodeRead(episode.episodeId, !episode.isRead) },
+        if (queue.isEmpty()) {
+            AppEmptyState(
+                title = stringResource(
+                    if (hasEpisodes) R.string.queue_filtered_empty_title else R.string.queue_empty_title,
+                ),
+                subtitle = stringResource(
+                    if (hasEpisodes) R.string.queue_filtered_empty_subtitle else R.string.queue_empty_subtitle,
+                ),
+                modifier = Modifier.fillMaxSize(),
             )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(
+                    items = queue,
+                    key = QueueEpisode::episodeId,
+                ) { episode ->
+                    CompactQueueCard(
+                        episode = episode,
+                        onPlayEpisode = { onPlayEpisode(episode.episodeId) },
+                        onOpenDetail = { onOpenEpisodeDetail(episode) },
+                        onToggleRead = { onMarkEpisodeRead(episode.episodeId, !episode.isRead) },
+                    )
+                }
+            }
         }
     }
 }
@@ -819,6 +901,7 @@ private fun CompactQueueCard(
         0f
     }
 
+    val readAlpha = if (episode.isRead) 0.45f else 1f
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -845,7 +928,8 @@ private fun CompactQueueCard(
                     modifier = Modifier
                         .size(62.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .alpha(readAlpha),
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -858,11 +942,12 @@ private fun CompactQueueCard(
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = readAlpha),
                     )
                     Text(
                         text = episode.podcastTitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = readAlpha),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -875,7 +960,7 @@ private fun CompactQueueCard(
                             ),
                         ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = readAlpha),
                     )
                     if (progress > 0f) {
                         LinearProgressIndicator(
@@ -1197,11 +1282,18 @@ private fun CalendarMonthPage(
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     if (count > 0) {
-                                        Text(
-                                            text = count.toString(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
+                                        Badge(
+                                            modifier = Modifier.border(1.5.dp, Color.White, CircleShape),
+                                            containerColor = Color(0xFF1D3091),
+                                            contentColor = Color.White,
+                                        ) {
+                                            Text(
+                                                text = count.toString(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(horizontal = 3.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1221,6 +1313,7 @@ private fun CalendarEpisodeCard(
     onToggleReadState: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val readAlpha = if (episode.isRead) 0.45f else 1f
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
@@ -1245,7 +1338,8 @@ private fun CalendarEpisodeCard(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .alpha(readAlpha),
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1255,11 +1349,12 @@ private fun CalendarEpisodeCard(
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = readAlpha),
                     )
                     Text(
                         text = episode.podcastTitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = readAlpha),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1272,7 +1367,7 @@ private fun CalendarEpisodeCard(
                             ),
                         ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = readAlpha),
                     )
                 }
             }
@@ -1310,86 +1405,56 @@ private fun SubscriptionsScreenContent(
         return
     }
 
-    LazyColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(
             items = subscriptions,
             key = SubscriptionSummary::feedUrl,
         ) { subscription ->
-            SubscriptionCardExpanded(
+            SubscriptionGridItem(
                 subscription = subscription,
-                onOpenSubscription = { onOpenSubscription(subscription.feedUrl) },
-                onOpenSettings = { onOpenSettings(subscription.feedUrl) },
+                onClick = { onOpenSubscription(subscription.feedUrl) },
             )
         }
     }
 }
 
 @Composable
-private fun SubscriptionCardExpanded(
+private fun SubscriptionGridItem(
     subscription: SubscriptionSummary,
-    onOpenSubscription: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    Card(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clickable(onClick = onOpenSubscription),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AsyncImage(
-                model = subscription.imageUrl,
-                contentDescription = subscription.title,
+        AsyncImage(
+            model = subscription.imageUrl,
+            contentDescription = subscription.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        if (subscription.unreadCount > 0) {
+            Badge(
                 modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = subscription.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                subscription.author?.takeIf(String::isNotBlank)?.let { author ->
-                    Text(
-                        text = author,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    text = stringResource(
-                        R.string.subscription_episode_summary,
-                        subscription.episodeCount,
-                        subscription.lastSyncedAt.asFriendlyDateTime(),
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(
-                onClick = onOpenSettings,
-                shape = IconButtonShape,
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .border(1.5.dp, Color.White, CircleShape),
+                containerColor = Color(0xFF1D3091),
+                contentColor = Color.White,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Tune,
-                    contentDescription = stringResource(R.string.cd_subscription_preferences),
-                    modifier = Modifier.size(scaledDp(26.dp)),
+                Text(
+                    text = subscription.unreadCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 3.dp),
                 )
             }
         }
@@ -1599,35 +1664,21 @@ private fun AddPodcastSheet(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AppSettingsSheet(
+private fun AppSettingsContent(
     settings: AppSettings,
     onAppLanguageSelected: (AppLanguage) -> Unit,
     onThemeSelected: (ThemeMode) -> Unit,
-    onRefreshIntervalSelected: (Int) -> Unit,
     onSyncSummaryNotificationsChanged: (Boolean) -> Unit,
     onVolumeNormalizationChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val languageScroll = rememberScrollState()
-    val themeScroll = rememberScrollState()
-    val refreshScroll = rememberScrollState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = stringResource(R.string.settings_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        item {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1639,33 +1690,12 @@ private fun AppSettingsSheet(
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.settings_language_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(languageScroll)
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AppLanguage.entries.forEach { language ->
-                        FilterChip(
-                            selected = settings.appLanguage == language,
-                            onClick = { onAppLanguageSelected(language) },
-                            label = { Text(language.settingsCode()) },
-                        )
-                    }
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-                Text(
                     text = stringResource(R.string.settings_theme_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(themeScroll)
                         .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -1673,7 +1703,39 @@ private fun AppSettingsSheet(
                         FilterChip(
                             selected = settings.themeMode == mode,
                             onClick = { onThemeSelected(mode) },
-                            label = { Text(stringResource(mode.themeCodeRes())) },
+                            label = { Text(stringResource(mode.themeLabelRes())) },
+                        )
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+                Text(
+                    text = stringResource(R.string.settings_language_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = settings.appLanguage == AppLanguage.System,
+                        onClick = { onAppLanguageSelected(AppLanguage.System) },
+                        label = { Text(stringResource(AppLanguage.System.labelRes())) },
+                    )
+                }
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    AppLanguage.entries.filter { it != AppLanguage.System }.forEach { language ->
+                        FilterChip(
+                            selected = settings.appLanguage == language,
+                            onClick = { onAppLanguageSelected(language) },
+                            label = { Text(stringResource(language.labelRes())) },
                         )
                     }
                 }
@@ -1725,29 +1787,9 @@ private fun AppSettingsSheet(
                         onCheckedChange = onVolumeNormalizationChanged,
                     )
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-                Text(
-                    text = stringResource(R.string.settings_refresh_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(refreshScroll)
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    settingsRefreshHourOptions.forEach { hours ->
-                        FilterChip(
-                            selected = settings.refreshIntervalHours == hours,
-                            onClick = { onRefreshIntervalSelected(hours) },
-                            label = { Text("${hours}h") },
-                        )
-                    }
-                }
             }
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        }
     }
 }
 
@@ -1755,19 +1797,26 @@ private fun AppSettingsSheet(
 private fun SubscriptionEpisodesSheet(
     subscription: SubscriptionSummary,
     episodes: List<CalendarEpisode>,
-    unreadOnly: Boolean,
+    readFilter: QueueReadFilter,
     ascendingOrder: Boolean,
-    onUnreadOnlyChange: (Boolean) -> Unit,
-    onAscendingOrderChange: (Boolean) -> Unit,
+    onReadFilterChange: (QueueReadFilter) -> Unit,
+    onToggleSortOrder: () -> Unit,
     onBulkMarkEpisodes: (Boolean) -> Unit,
     onPlayEpisode: (CalendarEpisode) -> Unit,
     onOpenEpisodeDetail: (CalendarEpisode) -> Unit,
     onToggleRead: (String, Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var showBulkReadDialog by remember { mutableStateOf(false) }
-    val visibleEpisodes = remember(episodes, unreadOnly, ascendingOrder) {
+    val visibleEpisodes = remember(episodes, readFilter, ascendingOrder) {
         episodes
-            .filter { episode -> !unreadOnly || !episode.isRead }
+            .filter { episode ->
+                when (readFilter) {
+                    QueueReadFilter.All -> true
+                    QueueReadFilter.Unread -> !episode.isRead
+                    QueueReadFilter.Read -> episode.isRead
+                }
+            }
             .sortedBy(CalendarEpisode::publishedAt)
             .let { list -> if (ascendingOrder) list else list.reversed() }
     }
@@ -1812,33 +1861,68 @@ private fun SubscriptionEpisodesSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = subscription.title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilterChip(
-                selected = unreadOnly,
-                onClick = { onUnreadOnlyChange(!unreadOnly) },
-                label = { Text(stringResource(R.string.filter_unread_only)) },
+            Text(
+                text = subscription.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
             )
-            FilterChip(
-                selected = ascendingOrder,
-                onClick = { onAscendingOrderChange(!ascendingOrder) },
-                label = {
-                    Text(
-                        stringResource(
-                            if (ascendingOrder) R.string.sort_date_asc else R.string.sort_date_desc,
-                        )
-                    )
-                },
+            IconButton(onClick = onOpenSettings, shape = IconButtonShape) {
+                Icon(
+                    imageVector = Icons.Outlined.Tune,
+                    contentDescription = stringResource(R.string.cd_subscription_preferences),
+                    modifier = Modifier.size(scaledDp(24.dp)),
+                )
+            }
+        }
+        subscription.author?.takeIf(String::isNotBlank)?.let { author ->
+            Text(
+                text = author,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        subscription.description?.trim()?.takeIf(String::isNotEmpty)?.let { desc ->
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = { onReadFilterChange(readFilter.next()) },
+                shape = IconButtonShape,
+            ) {
+                Icon(
+                    imageVector = readFilter.icon(),
+                    contentDescription = stringResource(R.string.cd_filter_read_state),
+                    modifier = Modifier.size(scaledDp(22.dp)),
+                )
+            }
+            IconButton(
+                onClick = onToggleSortOrder,
+                shape = IconButtonShape,
+            ) {
+                Icon(
+                    imageVector = if (ascendingOrder) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
+                    contentDescription = stringResource(R.string.cd_sort_order),
+                    modifier = Modifier.size(scaledDp(22.dp)),
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
             FilterChip(
                 selected = false,
                 onClick = {
@@ -1925,11 +2009,7 @@ private fun ReadStateIconButton(
     val readStateDescription = stringResource(
         if (isRead) R.string.cd_mark_as_unread else R.string.cd_mark_as_read,
     )
-    val strokeColor = if (isRead) {
-        Color(0xFF87F35C)
-    } else {
-        MaterialTheme.colorScheme.outline
-    }
+    val strokeColor = MaterialTheme.colorScheme.outline
     IconButton(
         onClick = onClick,
         shape = IconButtonShape,
@@ -1949,7 +2029,7 @@ private fun ReadStateIconButton(
                     ReadStateCheckmark(
                         color = strokeColor,
                         strokeWidth = ReadStateStrokeWidth,
-                        modifier = Modifier.size(scaledDp(16.dp)),
+                        modifier = Modifier.size(scaledDp(17.6.dp)),
                     )
                 }
             }
@@ -2137,6 +2217,7 @@ private fun ScrubbableNowPlayingSheet(
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var sliderFraction by remember(playerState.currentEpisodeId) { mutableFloatStateOf(0f) }
+    val descriptionScrollState = rememberScrollState()
 
     LaunchedEffect(playerState.positionMs, playerState.durationMs, isScrubbing) {
         if (!isScrubbing && playerState.durationMs > 0L) {
@@ -2148,47 +2229,68 @@ private fun ScrubbableNowPlayingSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .fillMaxHeight(0.95f)
             .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        AsyncImage(
-            model = playerState.artworkUrl,
-            contentDescription = playerState.title,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(32.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentScale = ContentScale.Crop,
-        )
         Column(
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Text(
-                text = playerState.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            AsyncImage(
+                model = playerState.artworkUrl,
+                contentDescription = playerState.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Crop,
             )
-            Text(
-                text = playerState.podcastTitle,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            playerState.publishedAtMs?.takeIf { it > 0L }?.let { publishedAt ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
-                    text = publishedAt.asFriendlyDate(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = playerState.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = playerState.podcastTitle,
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                playerState.publishedAtMs?.takeIf { it > 0L }?.let { publishedAt ->
+                    Text(
+                        text = publishedAt.asFriendlyDate(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            playerState.summary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
+                Text(
+                    text = summary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(86.dp)
+                        .verticalScroll(descriptionScrollState),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
             Slider(
                 value = sliderFraction,
                 onValueChange = {
@@ -2216,79 +2318,71 @@ private fun ScrubbableNowPlayingSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onPrevious,
-                shape = IconButtonShape,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.SkipPrevious,
-                    contentDescription = stringResource(R.string.cd_previous),
-                    modifier = Modifier.size(scaledDp(34.dp)),
-                )
+                IconButton(
+                    onClick = onPrevious,
+                    shape = IconButtonShape,
+                    modifier = Modifier.size(scaledDp(76.dp)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.SkipPrevious,
+                        contentDescription = stringResource(R.string.cd_previous),
+                        modifier = Modifier.size(scaledDp(48.dp)),
+                    )
+                }
+                IconButton(
+                    onClick = onSeekBack,
+                    shape = IconButtonShape,
+                    modifier = Modifier.size(scaledDp(76.dp)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Replay10,
+                        contentDescription = stringResource(R.string.label_rewind_10),
+                        modifier = Modifier.size(scaledDp(46.dp)),
+                    )
+                }
+                IconButton(
+                    onClick = onTogglePlayback,
+                    shape = IconButtonShape,
+                ) {
+                    Icon(
+                        imageVector = if (playerState.isPlaying) {
+                            Icons.Outlined.PauseCircle
+                        } else {
+                            Icons.Outlined.PlayCircle
+                        },
+                        contentDescription = stringResource(R.string.cd_play_pause),
+                        modifier = Modifier.size(scaledDp(72.dp)),
+                    )
+                }
+                IconButton(
+                    onClick = onSeekForward,
+                    shape = IconButtonShape,
+                    modifier = Modifier.size(scaledDp(76.dp)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Forward30,
+                        contentDescription = stringResource(R.string.label_forward_30),
+                        modifier = Modifier.size(scaledDp(46.dp)),
+                    )
+                }
+                IconButton(
+                    onClick = onNext,
+                    shape = IconButtonShape,
+                    modifier = Modifier.size(scaledDp(76.dp)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.SkipNext,
+                        contentDescription = stringResource(R.string.cd_next),
+                        modifier = Modifier.size(scaledDp(48.dp)),
+                    )
+                }
             }
-            PlayerTransportButton(
-                icon = Icons.Outlined.Replay10,
-                label = stringResource(R.string.label_rewind_10),
-                onClick = onSeekBack,
-            )
-            IconButton(
-                onClick = onTogglePlayback,
-                shape = IconButtonShape,
-            ) {
-                Icon(
-                    imageVector = if (playerState.isPlaying) {
-                        Icons.Outlined.PauseCircle
-                    } else {
-                        Icons.Outlined.PlayCircle
-                    },
-                    contentDescription = stringResource(R.string.cd_play_pause),
-                    modifier = Modifier.size(scaledDp(72.dp)),
-                )
-            }
-            PlayerTransportButton(
-                icon = Icons.Outlined.Forward30,
-                label = stringResource(R.string.label_forward_30),
-                onClick = onSeekForward,
-            )
-            IconButton(
-                onClick = onNext,
-                shape = IconButtonShape,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.SkipNext,
-                    contentDescription = stringResource(R.string.cd_next),
-                    modifier = Modifier.size(scaledDp(34.dp)),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun PlayerTransportButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.size(scaledDp(60.dp)),
-        shape = IconButtonShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        onClick = onClick,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(scaledDp(30.dp)),
-            )
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -2369,6 +2463,18 @@ private fun QueueReadFilter.labelRes(): Int {
     }
 }
 
+private fun QueueReadFilter.next(): QueueReadFilter = when (this) {
+    QueueReadFilter.All -> QueueReadFilter.Unread
+    QueueReadFilter.Unread -> QueueReadFilter.Read
+    QueueReadFilter.Read -> QueueReadFilter.All
+}
+
+private fun QueueReadFilter.icon() = when (this) {
+    QueueReadFilter.All -> Icons.Outlined.FilterAlt
+    QueueReadFilter.Unread -> Icons.Outlined.Hearing
+    QueueReadFilter.Read -> Icons.Outlined.DoneAll
+}
+
 @StringRes
 private fun AppLanguage.labelRes(): Int {
     return when (this) {
@@ -2395,6 +2501,14 @@ private fun ThemeMode.themeCodeRes(): Int =
         ThemeMode.System -> R.string.theme_code_system
         ThemeMode.Light -> R.string.theme_code_light
         ThemeMode.Dark -> R.string.theme_code_dark
+    }
+
+@StringRes
+private fun ThemeMode.themeLabelRes(): Int =
+    when (this) {
+        ThemeMode.System -> R.string.theme_system
+        ThemeMode.Light -> R.string.theme_light
+        ThemeMode.Dark -> R.string.theme_dark
     }
 
 @Composable

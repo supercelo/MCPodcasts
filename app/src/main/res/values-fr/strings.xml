@@ -3,6 +3,7 @@
     <string name="tab_queue">File</string>
     <string name="tab_calendar">Calendrier</string>
     <string name="tab_subscriptions">Abonnements</string>
+    <string name="tab_settings">Paramètres</string>
     <string name="topbar_calendar_summary">Épisodes par date de publication</string>
     <string name="cd_refresh_feeds">Actualiser les flux</string>
     <string name="cd_settings">Paramètres</string>
@@ -72,8 +73,9 @@
     <string name="cd_previous">Précédent</string>
     <string name="cd_next">Suivant</string>
     <string name="label_rewind_10">Reculer de 10 secondes</string>
-    <string name="label_forward_30">Avancer de 15 secondes</string>
+    <string name="label_forward_30">Avancer de 30 secondes</string>
     <string name="label_brand">Podcast MC</string>
+    <string name="episode_link">Page de l\'épisode</string>
     <string name="no_date">Pas de date</string>
     <string name="now">maintenant</string>
     <string name="msg_podcast_added_success">Podcast ajouté avec succès.</string>

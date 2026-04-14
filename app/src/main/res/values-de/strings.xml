@@ -3,6 +3,7 @@
     <string name="tab_queue">Warteschlange</string>
     <string name="tab_calendar">Kalender</string>
     <string name="tab_subscriptions">Abos</string>
+    <string name="tab_settings">Einstellungen</string>
     <string name="topbar_calendar_summary">Episoden nach Veröffentlichungsdatum</string>
     <string name="cd_refresh_feeds">Feeds aktualisieren</string>
     <string name="cd_settings">Einstellungen</string>
@@ -72,8 +73,9 @@
     <string name="cd_previous">Zurück</string>
     <string name="cd_next">Weiter</string>
     <string name="label_rewind_10">10 Sekunden zurück</string>
-    <string name="label_forward_30">15 Sekunden vor</string>
+    <string name="label_forward_30">30 Sekunden vor</string>
     <string name="label_brand">Podcast MC</string>
+    <string name="episode_link">Episodenseite</string>
     <string name="no_date">Kein Datum</string>
     <string name="now">jetzt</string>
     <string name="msg_podcast_added_success">Podcast erfolgreich hinzugefügt.</string>

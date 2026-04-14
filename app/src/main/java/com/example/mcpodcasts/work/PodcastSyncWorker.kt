@@ -11,7 +11,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.mcpodcasts.MCPodcastsApplication
-import com.example.mcpodcasts.domain.normalizeRefreshIntervalHours
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class PodcastSyncWorker(
@@ -61,14 +61,20 @@ object PodcastSyncScheduler {
     private const val PERIODIC_SYNC_NAME = "podcast-periodic-sync"
     private const val ONE_TIME_SYNC_NAME = "podcast-manual-sync"
 
-    fun ensureScheduled(
-        context: Context,
-        refreshIntervalHours: Int,
-    ) {
-        val request = PeriodicWorkRequestBuilder<PodcastSyncWorker>(
-            repeatInterval = normalizeRefreshIntervalHours(refreshIntervalHours),
-            repeatIntervalTimeUnit = TimeUnit.HOURS,
-        )
+    fun ensureScheduled(context: Context) {
+        val now = System.currentTimeMillis()
+        val midnight = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val initialDelayMs = (midnight.timeInMillis - now).coerceAtLeast(0L)
+
+        val request = PeriodicWorkRequestBuilder<PodcastSyncWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -78,7 +84,7 @@ object PodcastSyncScheduler {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_SYNC_NAME,
-            ExistingPeriodicWorkPolicy.REPLACE,
+            ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
     }

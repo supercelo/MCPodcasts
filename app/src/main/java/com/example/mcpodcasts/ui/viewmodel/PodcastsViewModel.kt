@@ -13,7 +13,6 @@ import com.example.mcpodcasts.data.local.CalendarEpisode
 import com.example.mcpodcasts.data.local.QueueEpisode
 import com.example.mcpodcasts.data.local.SubscriptionSummary
 import com.example.mcpodcasts.data.repository.PodcastRepository
-import com.example.mcpodcasts.data.settings.SettingsRepository
 import com.example.mcpodcasts.work.PodcastSyncScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,13 +25,13 @@ enum class AppMainTab {
     Queue,
     Calendar,
     Subscriptions,
+    Settings,
 }
 
 class PodcastsViewModel(
     application: Application,
     private val repository: PodcastRepository,
     private val discoveryRepository: PodcastDiscoveryRepository,
-    private val settingsRepository: SettingsRepository,
 ) : AndroidViewModel(application) {
     val queue: StateFlow<List<QueueEpisode>> = repository.observeQueue()
         .stateIn(
@@ -80,11 +79,7 @@ class PodcastsViewModel(
             repository.addSubscription(feedUrl)
                 .onSuccess {
                     _message.value = getApplication<Application>().getString(R.string.msg_podcast_added_success)
-                    val settings = settingsRepository.getCurrentSettings()
-                    PodcastSyncScheduler.ensureScheduled(
-                        context = getApplication(),
-                        refreshIntervalHours = settings.refreshIntervalHours,
-                    )
+                    PodcastSyncScheduler.ensureScheduled(context = getApplication())
                 }
                 .onFailure { error ->
                     _message.value = error.message
@@ -198,7 +193,6 @@ class PodcastsViewModel(
                     application = application,
                     repository = app.container.podcastRepository,
                     discoveryRepository = app.container.podcastDiscoveryRepository,
-                    settingsRepository = app.container.settingsRepository,
                 ) as T
             }
         }

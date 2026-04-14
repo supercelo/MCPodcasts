@@ -3,6 +3,7 @@
     <string name="tab_queue">Queue</string>
     <string name="tab_calendar">Calendar</string>
     <string name="tab_subscriptions">Subscriptions</string>
+    <string name="tab_settings">Settings</string>
     <string name="topbar_calendar_summary">Episodes by publish date</string>
     <string name="cd_refresh_feeds">Refresh feeds</string>
     <string name="cd_settings">Settings</string>
@@ -63,6 +64,11 @@
     <string name="filter_unread_only">Unread only</string>
     <string name="filter_read_only">Read only</string>
     <string name="filter_read_state_all">All episodes</string>
+    <string name="cd_filter_read_state">Filter by read state</string>
+    <string name="cd_sort_order">Sort order</string>
+    <string name="cd_last_synced">Last synced</string>
+    <string name="cd_calendar_podcast_filter">Filter calendar by podcast</string>
+    <string name="cd_calendar_read_filter">Filter calendar by read state</string>
     <string name="filter_all_podcasts">All podcasts</string>
     <string name="sort_date_asc">Date ASC</string>
     <string name="sort_date_desc">Date DESC</string>
@@ -89,8 +95,9 @@
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
     <string name="label_rewind_10">Rewind 10 seconds</string>
-    <string name="label_forward_30">Forward 15 seconds</string>
+    <string name="label_forward_30">Forward 30 seconds</string>
     <string name="label_brand">Podcast MC</string>
+    <string name="episode_link">Episode page</string>
     <string name="no_date">No date</string>
     <string name="now">now</string>
     <string name="msg_podcast_added_success">Podcast added successfully.</string>

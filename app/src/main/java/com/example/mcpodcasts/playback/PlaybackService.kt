@@ -3,11 +3,13 @@ package com.example.mcpodcasts.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.mcpodcasts.MainActivity
@@ -63,19 +65,40 @@ class PlaybackService : MediaSessionService() {
         }
 
         player = exoPlayer
-        val transportPlayer = object : ForwardingPlayer(exoPlayer) {
-            override fun seekToNext() {
-                exoPlayer.seekForward()
-            }
 
-            override fun seekToPrevious() {
-                exoPlayer.seekBack()
-            }
-        }
-        mediaSession = MediaSession.Builder(this, transportPlayer)
+        val seekBackButton = CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
+            .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+            .setDisplayName("Seek back 10s")
+            .build()
+        val seekForwardButton = CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
+            .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+            .setDisplayName("Seek forward 30s")
+            .build()
+        mediaSession = MediaSession.Builder(this, exoPlayer)
             .setId("mcpodcasts-session")
             .setSessionActivity(createSessionActivity())
+            .setCallback(object : MediaSession.Callback {
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo,
+                ): MediaSession.ConnectionResult {
+                    if (session.isMediaNotificationController(controller)) {
+                        return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                            .setMediaButtonPreferences(listOf(seekBackButton, seekForwardButton))
+                            .build()
+                    }
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+                }
+            })
             .build()
+            .also { session ->
+                session.setSessionExtras(
+                    Bundle().apply {
+                        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, true)
+                        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, true)
+                    },
+                )
+            }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -130,6 +153,6 @@ class PlaybackService : MediaSessionService() {
 
     private companion object {
         const val SEEK_BACK_MS = 10_000L
-        const val SEEK_FORWARD_MS = 15_000L
+        const val SEEK_FORWARD_MS = 30_000L
     }
 }
