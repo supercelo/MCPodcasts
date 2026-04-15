@@ -3,13 +3,12 @@ package com.example.mcpodcasts.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
-import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
-import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.mcpodcasts.MainActivity
@@ -22,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
@@ -82,23 +82,24 @@ class PlaybackService : MediaSessionService() {
                     session: MediaSession,
                     controller: MediaSession.ControllerInfo,
                 ): MediaSession.ConnectionResult {
-                    if (session.isMediaNotificationController(controller)) {
-                        return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                            .setMediaButtonPreferences(listOf(seekBackButton, seekForwardButton))
-                            .build()
+                    val notificationUi = session.isMediaNotificationController(controller)
+                    val carOrAutoUi =
+                        session.isAutomotiveController(controller) ||
+                            session.isAutoCompanionController(controller)
+                    if (!notificationUi && !carOrAutoUi) {
+                        return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
                     }
-                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+                    val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setMediaButtonPreferences(listOf(seekBackButton, seekForwardButton))
+                    if (carOrAutoUi) {
+                        builder.setAvailablePlayerCommands(
+                            withoutQueueNavigationCommands(exoPlayer.availableCommands),
+                        )
+                    }
+                    return builder.build()
                 }
             })
             .build()
-            .also { session ->
-                session.setSessionExtras(
-                    Bundle().apply {
-                        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, true)
-                        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, true)
-                    },
-                )
-            }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -136,6 +137,20 @@ class PlaybackService : MediaSessionService() {
                 enabled = true
             }
         }
+    }
+
+    /**
+     * Keeps 10s / 30s seek for steering-wheel and Android Auto surfaces that would otherwise map
+     * skip keys to the previous / next queue episode.
+     */
+    private fun withoutQueueNavigationCommands(available: Player.Commands): Player.Commands {
+        return Player.Commands.Builder()
+            .addAll(available)
+            .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+            .remove(Player.COMMAND_SEEK_TO_NEXT)
+            .build()
     }
 
     private fun createSessionActivity(): PendingIntent {
