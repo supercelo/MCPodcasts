@@ -50,6 +50,10 @@ class PodcastRepository(
 
     suspend fun addSubscription(feedUrl: String): Result<Unit> = runCatching {
         val normalizedUrl = normalizeFeedUrl(feedUrl)
+        val existing = podcastDao.getPodcast(normalizedUrl)
+        if (existing != null) {
+            error(appContext.getString(R.string.error_podcast_already_subscribed))
+        }
         syncFeed(
             feedUrl = normalizedUrl,
             notifyForNewEpisodes = false,

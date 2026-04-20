@@ -45,6 +45,13 @@
     <string name="settings_sync_notification_subtitle">Mostra quantos episódios novos foram encontrados em cada sincronização automática.</string>
     <string name="settings_volume_normalization_title">Normalização de volume</string>
     <string name="settings_volume_normalization_subtitle">Usa o processamento de volume do Android na reprodução para aproximar níveis entre episódios. O efeito depende do dispositivo e do formato de áudio.</string>
+    <string name="settings_data_title">Dados</string>
+    <string name="settings_data_subtitle">Exporta ou importa uma cópia completa de subscrições, episódios, progresso e preferências da app.</string>
+    <string name="settings_export_button">Exportar dados</string>
+    <string name="settings_import_button">Importar dados</string>
+    <string name="settings_import_confirm_title">Importar cópia de segurança?</string>
+    <string name="settings_import_confirm_message">Isto vai restaurar definições e adicionar podcasts que ainda não estejam subscritos.</string>
+    <string name="settings_import_confirm_action">Importar</string>
     <string name="settings_refresh_title">Atualização automática</string>
     <string name="language_system">Sistema</string>
     <string name="language_portuguese">Português</string>
@@ -88,10 +95,17 @@
     <string name="msg_no_podcasts_found">Nenhum podcast encontrado.</string>
     <string name="msg_search_failed">Falha na pesquisa de podcasts.</string>
     <string name="msg_subscription_preferences_updated">Preferências da subscrição atualizadas.</string>
+    <string name="msg_podcast_removed">Podcast removido.</string>
+    <string name="msg_export_success">Dados exportados com sucesso.</string>
+    <string name="msg_export_failed">Falha ao exportar dados.</string>
+    <string name="msg_import_success">Dados importados com sucesso.</string>
+    <string name="msg_import_failed">Falha ao importar dados.</string>
     <string name="error_fetch_feed">Não foi possível obter o feed (%1$d).</string>
     <string name="error_feed_no_content">O feed não tem conteúdo.</string>
     <string name="error_invalid_rss_url">Indica um URL RSS válido.</string>
+    <string name="error_podcast_already_subscribed">Este podcast já está subscrito.</string>
     <string name="error_search_podcasts">Não foi possível pesquisar podcasts (%1$d).</string>
+    <string name="export_file_name">mcpodcasts_backup</string>
     <string name="notification_channel_name">Novos episódios</string>
     <string name="notification_channel_description">Notificações quando chegam novos episódios aos podcasts subscritos.</string>
     <string name="sync_notification_channel_name">Sincronização em segundo plano</string>
@@ -100,6 +114,10 @@
     <string name="sync_in_progress_message">A verificar novos episódios em segundo plano.</string>
     <string name="notification_message_single_podcast">%1$s</string>
     <string name="notification_message_multiple_podcasts">%1$d podcasts com novidades</string>
+    <string name="widget_label">Leitor Podcast MC</string>
+    <string name="widget_description">Controla o episódio atual a partir do ecrã inicial.</string>
+    <string name="widget_no_episode_title">Nada a tocar</string>
+    <string name="widget_no_episode_subtitle">Abre o Podcast MC para escolheres um episódio.</string>
 
     <plurals name="topbar_queue_summary">
         <item quantity="one">%1$d episódio na fila</item>

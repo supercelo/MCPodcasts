@@ -53,11 +53,6 @@ class PlayerViewModel(
         playerConnection.skipToNext()
     }
 
-    override fun onCleared() {
-        playerConnection.release()
-        super.onCleared()
-    }
-
     companion object {
         fun factory(): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             override fun <T : androidx.lifecycle.ViewModel> create(

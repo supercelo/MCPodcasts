@@ -13,6 +13,7 @@ import com.example.mcpodcasts.data.local.CalendarEpisode
 import com.example.mcpodcasts.data.local.QueueEpisode
 import com.example.mcpodcasts.data.repository.PodcastRepository
 import com.example.mcpodcasts.data.settings.SettingsRepository
+import com.example.mcpodcasts.widget.PodcastPlayerWidgetUpdater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -71,6 +74,12 @@ class PlayerConnection(
     /** When this differs from [Player.currentMediaItem] id, clear [outroSkipTriggeredForMediaId]. */
     private var outroMonitorLastMediaId: String? = null
 
+    /** Last media item observed in player updates, used to complete previous item on auto-transition. */
+    private var lastTrackedEpisodeId: String? = null
+
+    /** Last known duration for [lastTrackedEpisodeId]. */
+    private var lastTrackedDurationMs: Long = 0L
+
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishState(player)
@@ -79,6 +88,24 @@ class PlayerConnection(
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 controller?.let { persistPlayback(it) }
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
+            val previousEpisodeId = lastTrackedEpisodeId
+            if (previousEpisodeId != null && previousEpisodeId != mediaItem?.mediaId) {
+                completeEpisode(previousEpisodeId, lastTrackedDurationMs)
+            }
+            val newMediaId = mediaItem?.mediaId ?: return
+            resetScrubSkipState()
+            val nextQueueEpisode = queuePlaybackEpisodes[newMediaId] ?: return
+            val startMs = computeStartPositionWithIntro(
+                savedMs = nextQueueEpisode.playbackPositionMs,
+                introSkipSeconds = nextQueueEpisode.introSkipSeconds,
+            )
+            if (startMs > 0L) {
+                controller?.seekTo(startMs)
             }
         }
     }
@@ -119,7 +146,34 @@ class PlayerConnection(
                 delay(350)
             }
         }
+
+        scope.launch {
+            _uiState
+                .map { state ->
+                    WidgetRefreshKey(
+                        episodeId = state.currentEpisodeId,
+                        isPlaying = state.isPlaying,
+                        hasMedia = state.hasMedia,
+                        artworkUrl = state.artworkUrl,
+                        positionBucketMs = state.positionMs / WIDGET_POSITION_BUCKET_MS,
+                    )
+                }
+                .distinctUntilChanged()
+                .collect {
+                    runCatching {
+                        PodcastPlayerWidgetUpdater.refresh(appContext, _uiState.value)
+                    }
+                }
+        }
     }
+
+    private data class WidgetRefreshKey(
+        val episodeId: String?,
+        val isPlaying: Boolean,
+        val hasMedia: Boolean,
+        val artworkUrl: String?,
+        val positionBucketMs: Long,
+    )
 
     fun playQueue(queue: List<QueueEpisode>, selectedEpisodeId: String) {
         val mediaController = controller ?: return
@@ -148,20 +202,45 @@ class PlayerConnection(
 
     fun playCalendarEpisode(episode: CalendarEpisode) {
         val mediaController = controller ?: return
-        resetScrubSkipState()
-        queuePlaybackEpisodes = emptyMap()
-        singlePlaybackEpisode = episode
-        val startMs = computeStartPositionWithIntro(
-            savedMs = episode.playbackPositionMs,
-            introSkipSeconds = episode.introSkipSeconds,
-        )
-        mediaController.setMediaItem(
-            episode.toMediaItem(),
-            startMs,
-        )
-        mediaController.repeatMode = Player.REPEAT_MODE_OFF
-        mediaController.prepare()
-        mediaController.play()
+        scope.launch {
+            val queue = repository.getQueueSnapshot().filter { !it.isCompleted }
+            val calendarIndexInQueue = queue.indexOfFirst { it.episodeId == episode.episodeId }
+            resetScrubSkipState()
+
+            val mediaItems: List<MediaItem>
+            val selectedIndex: Int
+            val startMs: Long
+
+            if (calendarIndexInQueue >= 0) {
+                // Episode belongs to the queue: play the queue starting at this item so playback
+                // naturally continues to the next queue episode when the current one ends.
+                singlePlaybackEpisode = null
+                queuePlaybackEpisodes = queue.associateBy(QueueEpisode::episodeId)
+                val selected = queue[calendarIndexInQueue]
+                mediaItems = queue.map(QueueEpisode::toMediaItem)
+                selectedIndex = calendarIndexInQueue
+                startMs = computeStartPositionWithIntro(
+                    savedMs = selected.playbackPositionMs,
+                    introSkipSeconds = selected.introSkipSeconds,
+                )
+            } else {
+                // Episode isn't in the queue (e.g. subscription excluded from queue): prepend it
+                // and append the current queue so playback continues into the queue afterwards.
+                singlePlaybackEpisode = episode
+                queuePlaybackEpisodes = queue.associateBy(QueueEpisode::episodeId)
+                mediaItems = listOf(episode.toMediaItem()) + queue.map(QueueEpisode::toMediaItem)
+                selectedIndex = 0
+                startMs = computeStartPositionWithIntro(
+                    savedMs = episode.playbackPositionMs,
+                    introSkipSeconds = episode.introSkipSeconds,
+                )
+            }
+
+            mediaController.setMediaItems(mediaItems, selectedIndex, startMs)
+            mediaController.repeatMode = Player.REPEAT_MODE_OFF
+            mediaController.prepare()
+            mediaController.play()
+        }
     }
 
     fun togglePlayback() {
@@ -179,7 +258,15 @@ class PlayerConnection(
     }
 
     fun seekForward() {
-        controller?.seekForward()
+        val mediaController = controller ?: return
+        val episodeId = mediaController.currentMediaItem?.mediaId
+        val positionMs = mediaController.currentPosition.coerceAtLeast(0L)
+        val durationMs = mediaController.duration.takeIf { it > 0 } ?: 0L
+        val seekForwardMs = mediaController.seekForwardIncrement.coerceAtLeast(0L)
+        mediaController.seekForward()
+        if (episodeId != null && durationMs > 0L && positionMs + seekForwardMs >= durationMs) {
+            completeEpisode(episodeId, durationMs)
+        }
     }
 
     fun seekToPosition(positionMs: Long) {
@@ -193,8 +280,13 @@ class PlayerConnection(
     fun seekToPositionFromUser(positionMs: Long) {
         val mediaController = controller ?: return
         val safe = positionMs.coerceAtLeast(0L)
+        val episodeIdBeforeSeek = mediaController.currentMediaItem?.mediaId ?: return
+        val durationBeforeSeek = mediaController.duration.takeIf { it > 0 } ?: 0L
         mediaController.seekTo(safe)
-        val episodeId = mediaController.currentMediaItem?.mediaId ?: return
+        if (durationBeforeSeek > 0L && safe >= durationBeforeSeek - NEAR_END_THRESHOLD_MS) {
+            completeEpisode(episodeIdBeforeSeek, durationBeforeSeek)
+        }
+        val episodeId = mediaController.currentMediaItem?.mediaId ?: episodeIdBeforeSeek
         val skips = resolveSkipsForMedia(episodeId)
         if (skips == null) {
             userAllowsIntroPlayback = false
@@ -235,6 +327,10 @@ class PlayerConnection(
 
     private fun publishState(player: Player) {
         val previousState = _uiState.value
+        player.currentMediaItem?.mediaId?.let { episodeId ->
+            lastTrackedEpisodeId = episodeId
+            lastTrackedDurationMs = player.duration.takeIf { it > 0 } ?: 0L
+        }
         val mediaMetadata = player.mediaMetadata
         val duration = player.duration.takeIf { it > 0 } ?: 0L
         val hasKnownMedia = player.currentMediaItem != null || player.mediaItemCount > 0
@@ -330,6 +426,18 @@ class PlayerConnection(
         }
     }
 
+    private fun completeEpisode(episodeId: String, durationMs: Long) {
+        scope.launch(Dispatchers.IO) {
+            repository.updatePlaybackState(
+                episodeId = episodeId,
+                positionMs = 0L,
+                durationMs = durationMs.coerceAtLeast(0L),
+                isRead = true,
+                isCompleted = true,
+            )
+        }
+    }
+
     private fun resetScrubSkipState() {
         userAllowsIntroPlayback = false
         userAllowsOutroPlayback = false
@@ -416,15 +524,7 @@ class PlayerConnection(
         if (outroSkipTriggeredForMediaId == episodeId) return
 
         outroSkipTriggeredForMediaId = episodeId
-        scope.launch(Dispatchers.IO) {
-            repository.updatePlaybackState(
-                episodeId = episodeId,
-                positionMs = 0L,
-                durationMs = duration,
-                isRead = true,
-                isCompleted = true,
-            )
-        }
+        completeEpisode(episodeId, duration)
         if (player.mediaItemCount > 1) {
             userAllowsIntroPlayback = false
             userAllowsOutroPlayback = false
@@ -435,6 +535,11 @@ class PlayerConnection(
             player.seekTo(duration)
             player.pause()
         }
+    }
+
+    private companion object {
+        const val NEAR_END_THRESHOLD_MS = 1_000L
+        const val WIDGET_POSITION_BUCKET_MS = 10_000L
     }
 }
 

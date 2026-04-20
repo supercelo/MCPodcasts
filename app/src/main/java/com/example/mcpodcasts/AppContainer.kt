@@ -1,6 +1,7 @@
 package com.example.mcpodcasts
 
 import android.content.Context
+import com.example.mcpodcasts.data.backup.BackupManager
 import com.example.mcpodcasts.data.discovery.PodcastDiscoveryRepository
 import com.example.mcpodcasts.data.local.PodcastDatabase
 import com.example.mcpodcasts.data.repository.PodcastRepository
@@ -29,6 +30,15 @@ class AppContainer(context: Context) {
 
     val settingsRepository: SettingsRepository by lazy {
         SettingsRepository(appContext)
+    }
+
+    val backupManager: BackupManager by lazy {
+        BackupManager(
+            database = database,
+            podcastDao = database.podcastDao(),
+            episodeDao = database.episodeDao(),
+            settingsRepository = settingsRepository,
+        )
     }
 
     val podcastDiscoveryRepository: PodcastDiscoveryRepository by lazy {

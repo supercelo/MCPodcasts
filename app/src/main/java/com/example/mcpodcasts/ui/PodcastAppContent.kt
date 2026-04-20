@@ -1,5 +1,7 @@
 package com.example.mcpodcasts.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -9,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -75,6 +78,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
@@ -126,6 +130,8 @@ import com.example.mcpodcasts.data.local.QueueEpisode
 import com.example.mcpodcasts.data.local.SubscriptionSummary
 import com.example.mcpodcasts.data.settings.AppLanguage
 import com.example.mcpodcasts.data.settings.AppSettings
+import com.example.mcpodcasts.data.settings.QueueReadFilter
+import com.example.mcpodcasts.data.settings.QueueSortOrder
 import com.example.mcpodcasts.data.settings.ThemeMode
 import com.example.mcpodcasts.domain.buildMonthRangeForEpisodes
 import com.example.mcpodcasts.domain.formatDurationMsForLabel
@@ -147,6 +153,7 @@ import kotlin.math.roundToLong
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import androidx.annotation.StringRes
+import androidx.compose.ui.platform.LocalContext
 
 private val IconScale = 1.1f
 private val IconButtonShape = RoundedCornerShape(4.dp)
@@ -192,17 +199,6 @@ private fun AppMainTab.titleRes(): Int = when (this) {
     AppMainTab.Settings -> R.string.tab_settings
 }
 
-private enum class QueueSortOrder {
-    NewestFirst,
-    OldestFirst,
-}
-
-private enum class QueueReadFilter {
-    All,
-    Unread,
-    Read,
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PodcastAppContent(
@@ -217,34 +213,40 @@ internal fun PodcastAppContent(
     val isRefreshing by podcastsViewModel.isRefreshing.collectAsStateWithLifecycle()
     val isSearching by podcastsViewModel.isSearching.collectAsStateWithLifecycle()
     val message by podcastsViewModel.message.collectAsStateWithLifecycle()
+    val settingsMessage by settingsViewModel.message.collectAsStateWithLifecycle()
+    val isExporting by settingsViewModel.isExporting.collectAsStateWithLifecycle()
+    val isImporting by settingsViewModel.isImporting.collectAsStateWithLifecycle()
     val playerState by playerViewModel.playerState.collectAsStateWithLifecycle()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     val selectedTab by podcastsViewModel.mainTab.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val exportFileName = "${stringResource(R.string.export_file_name)}.json"
 
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var showPlayerSheet by rememberSaveable { mutableStateOf(false) }
     var selectedSubscriptionFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSubscriptionSettingsFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
-    var queueSortOrder by rememberSaveable { mutableStateOf(QueueSortOrder.NewestFirst) }
-    var queueReadFilter by rememberSaveable { mutableStateOf(QueueReadFilter.Unread) }
-    var queuePodcastFilterFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    val queueSortOrder = settings.queueSortOrder
+    val queueReadFilter = settings.queueReadFilter
+    val queuePodcastFilterFeedUrl = settings.queuePodcastFilterFeedUrl
     var showQueuePodcastMenu by remember { mutableStateOf(false) }
-    var calendarReadFilter by rememberSaveable { mutableStateOf(QueueReadFilter.All) }
-    var calendarPodcastFilterFeedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    val calendarReadFilter = settings.calendarReadFilter
+    val calendarPodcastFilterFeedUrl = settings.calendarPodcastFilterFeedUrl
     var showCalendarPodcastMenu by remember { mutableStateOf(false) }
     var calendarSelectedDateIso by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
-    var subscriptionFiltersEncoded by rememberSaveable { mutableStateOf("") }
+    val subscriptionFiltersEncoded = settings.subscriptionFiltersEncoded
     val subscriptionFilters = remember(subscriptionFiltersEncoded) {
         decodeSubscriptionFilters(subscriptionFiltersEncoded)
     }
     fun updateSubscriptionFilters(feedUrl: String, readFilter: QueueReadFilter, ascendingOrder: Boolean) {
         val next = decodeSubscriptionFilters(subscriptionFiltersEncoded).toMutableMap()
         next[feedUrl] = readFilter to ascendingOrder
-        subscriptionFiltersEncoded = encodeSubscriptionFilters(next)
+        settingsViewModel.setSubscriptionFiltersEncoded(encodeSubscriptionFilters(next))
     }
     var addSearchQuery by rememberSaveable { mutableStateOf("") }
     var addManualUrl by rememberSaveable { mutableStateOf("") }
     var episodeDetailTarget by remember { mutableStateOf<EpisodeDetailTarget?>(null) }
+    var shouldConfirmImport by rememberSaveable { mutableStateOf(false) }
     val selectedSubscription = subscriptions.firstOrNull { it.feedUrl == selectedSubscriptionSettingsFeedUrl }
     val selectedSubscriptionEpisodes = calendarEpisodes.filter { episode ->
         episode.podcastId == selectedSubscriptionFeedUrl
@@ -299,6 +301,28 @@ internal fun PodcastAppContent(
     val subscriptionSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val episodeDetailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val stream = context.contentResolver.openOutputStream(uri)
+        if (stream == null) {
+            settingsViewModel.showErrorMessage(R.string.msg_export_failed)
+            return@rememberLauncherForActivityResult
+        }
+        settingsViewModel.exportBackup(stream)
+    }
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val stream = context.contentResolver.openInputStream(uri)
+        if (stream == null) {
+            settingsViewModel.showErrorMessage(R.string.msg_import_failed)
+            return@rememberLauncherForActivityResult
+        }
+        settingsViewModel.importBackup(stream)
+    }
     val shouldShowMiniPlayer = playerState.hasMedia ||
         playerState.currentEpisodeId != null ||
         playerState.title.isNotBlank()
@@ -310,6 +334,13 @@ internal fun PodcastAppContent(
         }
     }
 
+    LaunchedEffect(settingsMessage) {
+        settingsMessage?.let { text ->
+            snackbarHostState.showSnackbar(text)
+            settingsViewModel.clearMessage()
+        }
+    }
+
     LaunchedEffect(selectedTab) {
         episodeDetailTarget = null
     }
@@ -318,7 +349,7 @@ internal fun PodcastAppContent(
         if (queuePodcastFilterFeedUrl != null &&
             queuePodcastOptions.none { it.feedUrl == queuePodcastFilterFeedUrl }
         ) {
-            queuePodcastFilterFeedUrl = null
+            settingsViewModel.setQueuePodcastFilterFeedUrl(null)
         }
     }
 
@@ -326,7 +357,7 @@ internal fun PodcastAppContent(
         if (calendarPodcastFilterFeedUrl != null &&
             subscriptions.none { it.feedUrl == calendarPodcastFilterFeedUrl }
         ) {
-            calendarPodcastFilterFeedUrl = null
+            settingsViewModel.setCalendarPodcastFilterFeedUrl(null)
         }
     }
 
@@ -363,10 +394,10 @@ internal fun PodcastAppContent(
                     if (selectedTab == AppMainTab.Queue) {
                         IconButton(
                             onClick = {
-                                queueSortOrder = when (queueSortOrder) {
+                                settingsViewModel.setQueueSortOrder(when (queueSortOrder) {
                                     QueueSortOrder.NewestFirst -> QueueSortOrder.OldestFirst
                                     QueueSortOrder.OldestFirst -> QueueSortOrder.NewestFirst
-                                }
+                                })
                             },
                             shape = IconButtonShape,
                         ) {
@@ -380,7 +411,7 @@ internal fun PodcastAppContent(
                             )
                         }
                         IconButton(
-                            onClick = { queueReadFilter = queueReadFilter.next() },
+                            onClick = { settingsViewModel.setQueueReadFilter(queueReadFilter.next()) },
                             shape = IconButtonShape,
                         ) {
                             Icon(
@@ -412,7 +443,7 @@ internal fun PodcastAppContent(
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.filter_all_podcasts)) },
                                     onClick = {
-                                        queuePodcastFilterFeedUrl = null
+                                        settingsViewModel.setQueuePodcastFilterFeedUrl(null)
                                         showQueuePodcastMenu = false
                                     },
                                     trailingIcon = {
@@ -425,7 +456,7 @@ internal fun PodcastAppContent(
                                     DropdownMenuItem(
                                         text = { Text(subscription.title) },
                                         onClick = {
-                                            queuePodcastFilterFeedUrl = subscription.feedUrl
+                                            settingsViewModel.setQueuePodcastFilterFeedUrl(subscription.feedUrl)
                                             showQueuePodcastMenu = false
                                         },
                                         trailingIcon = {
@@ -440,7 +471,7 @@ internal fun PodcastAppContent(
                     }
                     if (selectedTab == AppMainTab.Calendar) {
                         IconButton(
-                            onClick = { calendarReadFilter = calendarReadFilter.next() },
+                            onClick = { settingsViewModel.setCalendarReadFilter(calendarReadFilter.next()) },
                             shape = IconButtonShape,
                         ) {
                             Icon(
@@ -472,7 +503,7 @@ internal fun PodcastAppContent(
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.filter_all_podcasts)) },
                                     onClick = {
-                                        calendarPodcastFilterFeedUrl = null
+                                        settingsViewModel.setCalendarPodcastFilterFeedUrl(null)
                                         showCalendarPodcastMenu = false
                                     },
                                     trailingIcon = {
@@ -485,7 +516,7 @@ internal fun PodcastAppContent(
                                     DropdownMenuItem(
                                         text = { Text(subscription.title) },
                                         onClick = {
-                                            calendarPodcastFilterFeedUrl = subscription.feedUrl
+                                            settingsViewModel.setCalendarPodcastFilterFeedUrl(subscription.feedUrl)
                                             showCalendarPodcastMenu = false
                                         },
                                         trailingIcon = {
@@ -658,11 +689,46 @@ internal fun PodcastAppContent(
                 onThemeSelected = settingsViewModel::setThemeMode,
                 onSyncSummaryNotificationsChanged = settingsViewModel::setSyncSummaryNotificationsEnabled,
                 onVolumeNormalizationChanged = settingsViewModel::setVolumeNormalizationEnabled,
+                onExport = {
+                    exportBackupLauncher.launch(exportFileName)
+                },
+                onImport = {
+                    shouldConfirmImport = true
+                },
+                isExporting = isExporting,
+                isImporting = isImporting,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
             )
         }
+    }
+
+    if (shouldConfirmImport) {
+        AlertDialog(
+            onDismissRequest = { shouldConfirmImport = false },
+            title = {
+                Text(text = stringResource(R.string.settings_import_confirm_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.settings_import_confirm_message))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        shouldConfirmImport = false
+                        importBackupLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+                    },
+                ) {
+                    Text(text = stringResource(R.string.settings_import_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { shouldConfirmImport = false }) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+            },
+        )
     }
 
     if (showAddSheet) {
@@ -766,10 +832,10 @@ internal fun PodcastAppContent(
                         selectedSubscriptionFeedUrl = null
                     }
                     if (queuePodcastFilterFeedUrl == feedUrl) {
-                        queuePodcastFilterFeedUrl = null
+                        settingsViewModel.setQueuePodcastFilterFeedUrl(null)
                     }
                     if (calendarPodcastFilterFeedUrl == feedUrl) {
-                        calendarPodcastFilterFeedUrl = null
+                        settingsViewModel.setCalendarPodcastFilterFeedUrl(null)
                     }
                 },
             )
@@ -1672,6 +1738,10 @@ private fun AppSettingsContent(
     onThemeSelected: (ThemeMode) -> Unit,
     onSyncSummaryNotificationsChanged: (Boolean) -> Unit,
     onVolumeNormalizationChanged: (Boolean) -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    isExporting: Boolean,
+    isImporting: Boolean,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -1786,6 +1856,38 @@ private fun AppSettingsContent(
                         checked = settings.volumeNormalizationEnabled,
                         onCheckedChange = onVolumeNormalizationChanged,
                     )
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                Text(
+                    text = stringResource(R.string.settings_data_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.settings_data_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = onExport,
+                        enabled = !isExporting && !isImporting,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(text = stringResource(R.string.settings_export_button))
+                    }
+                    OutlinedButton(
+                        onClick = onImport,
+                        enabled = !isExporting && !isImporting,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(text = stringResource(R.string.settings_import_button))
+                    }
                 }
             }
         }
@@ -2226,163 +2328,289 @@ private fun ScrubbableNowPlayingSheet(
         }
     }
 
-    Column(
+    val onSliderFractionChanged: (Float) -> Unit = {
+        isScrubbing = true
+        sliderFraction = it
+    }
+    val onSliderReleased: () -> Unit = {
+        val position = (sliderFraction * playerState.durationMs).roundToLong()
+        onSeekToPosition(position)
+        isScrubbing = false
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.95f)
-            .padding(horizontal = 24.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
+            .fillMaxHeight(0.95f),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            AsyncImage(
-                model = playerState.artworkUrl,
-                contentDescription = playerState.title,
+        val isLandscape = maxWidth > maxHeight
+        if (isLandscape) {
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
-            )
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = playerState.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = playerState.podcastTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                playerState.publishedAtMs?.takeIf { it > 0L }?.let { publishedAt ->
-                    Text(
-                        text = publishedAt.asFriendlyDate(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            playerState.summary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
-                Text(
-                    text = summary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(86.dp)
-                        .verticalScroll(descriptionScrollState),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Slider(
-                value = sliderFraction,
-                onValueChange = {
-                    isScrubbing = true
-                    sliderFraction = it
-                },
-                onValueChangeFinished = {
-                    val position = (sliderFraction * playerState.durationMs).roundToLong()
-                    onSeekToPosition(position)
-                    isScrubbing = false
-                },
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = (sliderFraction * playerState.durationMs).roundToLong().asDurationLabel(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = playerState.durationMs.asDurationLabel(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
-                    onClick = onPrevious,
-                    shape = IconButtonShape,
-                    modifier = Modifier.size(scaledDp(76.dp)),
+                AsyncImage(
+                    model = playerState.artworkUrl,
+                    contentDescription = playerState.title,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentScale = ContentScale.Crop,
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.SkipPrevious,
-                        contentDescription = stringResource(R.string.cd_previous),
-                        modifier = Modifier.size(scaledDp(48.dp)),
+                    PlayerMetadataBlock(
+                        playerState = playerState,
+                        descriptionScrollState = descriptionScrollState,
+                        summaryMaxHeight = 110.dp,
+                        horizontalAlignment = Alignment.Start,
                     )
-                }
-                IconButton(
-                    onClick = onSeekBack,
-                    shape = IconButtonShape,
-                    modifier = Modifier.size(scaledDp(76.dp)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Replay10,
-                        contentDescription = stringResource(R.string.label_rewind_10),
-                        modifier = Modifier.size(scaledDp(46.dp)),
-                    )
-                }
-                IconButton(
-                    onClick = onTogglePlayback,
-                    shape = IconButtonShape,
-                ) {
-                    Icon(
-                        imageVector = if (playerState.isPlaying) {
-                            Icons.Outlined.PauseCircle
-                        } else {
-                            Icons.Outlined.PlayCircle
-                        },
-                        contentDescription = stringResource(R.string.cd_play_pause),
-                        modifier = Modifier.size(scaledDp(72.dp)),
-                    )
-                }
-                IconButton(
-                    onClick = onSeekForward,
-                    shape = IconButtonShape,
-                    modifier = Modifier.size(scaledDp(76.dp)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Forward30,
-                        contentDescription = stringResource(R.string.label_forward_30),
-                        modifier = Modifier.size(scaledDp(46.dp)),
-                    )
-                }
-                IconButton(
-                    onClick = onNext,
-                    shape = IconButtonShape,
-                    modifier = Modifier.size(scaledDp(76.dp)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.SkipNext,
-                        contentDescription = stringResource(R.string.cd_next),
-                        modifier = Modifier.size(scaledDp(48.dp)),
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        PlayerScrubber(
+                            sliderFraction = sliderFraction,
+                            durationMs = playerState.durationMs,
+                            onFractionChanged = onSliderFractionChanged,
+                            onReleased = onSliderReleased,
+                        )
+                        PlayerControlsRow(
+                            isPlaying = playerState.isPlaying,
+                            onTogglePlayback = onTogglePlayback,
+                            onSeekBack = onSeekBack,
+                            onSeekForward = onSeekForward,
+                            onPrevious = onPrevious,
+                            onNext = onNext,
+                            buttonSize = scaledDp(64.dp),
+                            secondaryIconSize = scaledDp(40.dp),
+                            playIconSize = scaledDp(60.dp),
+                        )
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(24.dp))
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    AsyncImage(
+                        model = playerState.artworkUrl,
+                        contentDescription = playerState.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentScale = ContentScale.Crop,
+                    )
+                    PlayerMetadataBlock(
+                        playerState = playerState,
+                        descriptionScrollState = descriptionScrollState,
+                        summaryMaxHeight = 86.dp,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    )
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    PlayerScrubber(
+                        sliderFraction = sliderFraction,
+                        durationMs = playerState.durationMs,
+                        onFractionChanged = onSliderFractionChanged,
+                        onReleased = onSliderReleased,
+                    )
+                    PlayerControlsRow(
+                        isPlaying = playerState.isPlaying,
+                        onTogglePlayback = onTogglePlayback,
+                        onSeekBack = onSeekBack,
+                        onSeekForward = onSeekForward,
+                        onPrevious = onPrevious,
+                        onNext = onNext,
+                        buttonSize = scaledDp(76.dp),
+                        secondaryIconSize = scaledDp(46.dp),
+                        playIconSize = scaledDp(72.dp),
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerMetadataBlock(
+    playerState: PlayerUiState,
+    descriptionScrollState: androidx.compose.foundation.ScrollState,
+    summaryMaxHeight: Dp,
+    horizontalAlignment: Alignment.Horizontal,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = horizontalAlignment,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = playerState.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = playerState.podcastTitle,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        playerState.publishedAtMs?.takeIf { it > 0L }?.let { publishedAt ->
+            Text(
+                text = publishedAt.asFriendlyDate(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        playerState.summary?.trim()?.takeIf { it.isNotEmpty() }?.let { summary ->
+            Text(
+                text = summary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(summaryMaxHeight)
+                    .verticalScroll(descriptionScrollState),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerScrubber(
+    sliderFraction: Float,
+    durationMs: Long,
+    onFractionChanged: (Float) -> Unit,
+    onReleased: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Slider(
+            value = sliderFraction,
+            onValueChange = onFractionChanged,
+            onValueChangeFinished = onReleased,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = (sliderFraction * durationMs).roundToLong().asDurationLabel(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = durationMs.asDurationLabel(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerControlsRow(
+    isPlaying: Boolean,
+    onTogglePlayback: () -> Unit,
+    onSeekBack: () -> Unit,
+    onSeekForward: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    buttonSize: Dp,
+    secondaryIconSize: Dp,
+    playIconSize: Dp,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = onPrevious,
+            shape = IconButtonShape,
+            modifier = Modifier.size(buttonSize),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.SkipPrevious,
+                contentDescription = stringResource(R.string.cd_previous),
+                modifier = Modifier.size(secondaryIconSize + 2.dp),
+            )
+        }
+        IconButton(
+            onClick = onSeekBack,
+            shape = IconButtonShape,
+            modifier = Modifier.size(buttonSize),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Replay10,
+                contentDescription = stringResource(R.string.label_rewind_10),
+                modifier = Modifier.size(secondaryIconSize),
+            )
+        }
+        IconButton(
+            onClick = onTogglePlayback,
+            shape = IconButtonShape,
+        ) {
+            Icon(
+                imageVector = if (isPlaying) {
+                    Icons.Outlined.PauseCircle
+                } else {
+                    Icons.Outlined.PlayCircle
+                },
+                contentDescription = stringResource(R.string.cd_play_pause),
+                modifier = Modifier.size(playIconSize),
+            )
+        }
+        IconButton(
+            onClick = onSeekForward,
+            shape = IconButtonShape,
+            modifier = Modifier.size(buttonSize),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Forward30,
+                contentDescription = stringResource(R.string.label_forward_30),
+                modifier = Modifier.size(secondaryIconSize),
+            )
+        }
+        IconButton(
+            onClick = onNext,
+            shape = IconButtonShape,
+            modifier = Modifier.size(buttonSize),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.SkipNext,
+                contentDescription = stringResource(R.string.cd_next),
+                modifier = Modifier.size(secondaryIconSize + 2.dp),
+            )
         }
     }
 }

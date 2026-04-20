@@ -3,6 +3,7 @@ package com.example.mcpodcasts.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -68,11 +69,23 @@ class PlaybackService : MediaSessionService() {
 
         val seekBackButton = CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
             .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+            .setSlots(CommandButton.SLOT_BACK)
             .setDisplayName("Seek back 10s")
             .build()
         val seekForwardButton = CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
             .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+            .setSlots(CommandButton.SLOT_FORWARD)
             .setDisplayName("Seek forward 30s")
+            .build()
+        val previousEpisodeButton = CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_BACK_SECONDARY)
+            .setDisplayName("Previous episode")
+            .build()
+        val nextEpisodeButton = CommandButton.Builder(CommandButton.ICON_NEXT)
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_FORWARD_SECONDARY)
+            .setDisplayName("Next episode")
             .build()
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setId("mcpodcasts-session")
@@ -82,21 +95,56 @@ class PlaybackService : MediaSessionService() {
                     session: MediaSession,
                     controller: MediaSession.ControllerInfo,
                 ): MediaSession.ConnectionResult {
-                    val notificationUi = session.isMediaNotificationController(controller)
-                    val carOrAutoUi =
-                        session.isAutomotiveController(controller) ||
-                            session.isAutoCompanionController(controller)
-                    if (!notificationUi && !carOrAutoUi) {
+                    val isNotificationController = session.isMediaNotificationController(controller)
+                    val isAppController = controller.packageName == packageName
+                    if (isAppController && !isNotificationController) {
                         return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
                     }
-                    val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    if (isNotificationController) {
+                        return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                            .setMediaButtonPreferences(
+                                listOf(
+                                    previousEpisodeButton,
+                                    seekBackButton,
+                                    seekForwardButton,
+                                    nextEpisodeButton,
+                                ),
+                            )
+                            .build()
+                    }
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                         .setMediaButtonPreferences(listOf(seekBackButton, seekForwardButton))
-                    if (carOrAutoUi) {
-                        builder.setAvailablePlayerCommands(
+                        .setAvailablePlayerCommands(
                             withoutQueueNavigationCommands(exoPlayer.availableCommands),
                         )
+                        .build()
+                }
+
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    intent: Intent,
+                ): Boolean {
+                    val isAppController = controllerInfo.packageName == packageName
+                    val keyEvent = intent.extras?.getParcelable(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+
+                    if (!isAppController && keyEvent?.action == KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_NEXT,
+                            KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                                session.player.seekForward()
+                                return true
+                            }
+
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                            KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                                session.player.seekBack()
+                                return true
+                            }
+                        }
                     }
-                    return builder.build()
+
+                    return super.onMediaButtonEvent(session, controllerInfo, intent)
                 }
             })
             .build()
